@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  使用 Log4j2 的异步日志机制 (AsyncRoot)，避免由于同步锁和磁盘 I/O 导致压测主循环 (Zero-GC 循环) 被卡住阻塞。
+  配置 status="WARN" 则是为了关闭 Log4j2 本身初始化的诊断日志。
+-->
+<Configuration status="WARN" monitorInterval="60">
+    <Appenders>
+        <Console name="Console" target="SYSTEM_OUT">
+            <!-- 采用简洁极客风的单行信息屏显，提高辨识率 -->
+            <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{1.} - %msg%n" />
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <!-- 屏蔽 Huawei OBS SDK 默认大量的底层 HTTP 握手 INFO 流水，仅打印 WARN 和 ERROR -->
+        <AsyncLogger name="com.obs" level="WARN" includeLocation="false" additivity="false">
+             <AppenderRef ref="Console"/>
+        </AsyncLogger>
+        
+        <AsyncLogger name="org.apache.http" level="WARN" includeLocation="false" additivity="false">
+            <AppenderRef ref="Console"/>
+        </AsyncLogger>
+
+        <!-- Root Level 限制为 INFO，确保控制台纯净 -->
+        <AsyncRoot level="INFO" includeLocation="false">
+            <AppenderRef ref="Console" />
+        </AsyncRoot>
+    </Loggers>
+</Configuration>

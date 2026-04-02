@@ -14,7 +14,8 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         
-        <obs.sdk.version>3.23.9.1</obs.sdk.version> <log4j2.version>2.20.0</log4j2.version>
+	<obs.sdk.version>3.23.9.1</obs.sdk.version> 
+	<log4j2.version>2.20.0</log4j2.version>
         <disruptor.version>3.4.4</disruptor.version>
         <hdrhistogram.version>2.1.12</hdrhistogram.version>
     </properties>
