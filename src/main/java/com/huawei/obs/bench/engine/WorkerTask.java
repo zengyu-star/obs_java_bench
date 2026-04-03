@@ -9,42 +9,62 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
 
 /**
- * 压测工作线程 (The Engine Motor)
- * 核心要求：发流主循环 (Phase 2) 中必须做到极限的 Zero-GC。
+ * Benchmark Worker Thread (The Engine Motor)
+ * Core requirement: The execution loop (Phase 2) must achieve extreme Zero-GC performance.
  */
 public class WorkerTask implements Runnable {
 
     private final WorkerContext context;
     private final BenchmarkStats globalStats;
+    private final String taskDir;
+    private final int workerId;
     
-    // 调度发令枪
+    // Scheduling latches
     private final CountDownLatch readyLatch;
     private final CountDownLatch startGun;
     private final CountDownLatch doneLatch;
 
-    // 【架构师优化1】：线程私有的字符串构造器，复用底层 char[]，避免对象分配
+    private java.io.PrintWriter detailWriter;
+
+    // [Architect Optimization]: Thread-local builders to reuse internal char[] and avoid allocations
     private final StringBuilder keyBuilder = new StringBuilder(128);
+    private final StringBuilder csvBuilder = new StringBuilder(256);
 
     public WorkerTask(WorkerContext context, BenchmarkStats globalStats, 
-                      CountDownLatch readyLatch, CountDownLatch startGun, CountDownLatch doneLatch) {
+                      CountDownLatch readyLatch, CountDownLatch startGun, CountDownLatch doneLatch,
+                      String taskDir, int workerId) {
         this.context = context;
         this.globalStats = globalStats;
         this.readyLatch = readyLatch;
         this.startGun = startGun;
         this.doneLatch = doneLatch;
+        this.taskDir = taskDir;
+        this.workerId = workerId;
     }
 
     @Override
     public void run() {
         try {
             // =========================================================
-            // Phase 1: 预备与热身阶段 (Preparation)
+            // Phase 1: Preparation & Warm-up
             // =========================================================
             BenchConfig config = context.getConfig();
             
-            // 【架构师优化2】：提前在系统内核态分配好 DirectBuffer，不计入压测耗时
+            // [Architect's note]: Ensure pattern buffer is allocated if any involved operation is an upload (PUT/Multipart/Resumable)
             if (config.objectSize() > 0) {
-                if (isUploadTask(config.testCaseCode()) || (config.testCaseCode() == 202 && config.enableDataValidation())) {
+                boolean needsUploadBuffer = false;
+                if (config.testCaseCode() == 900 && config.mixOperations() != null) {
+                    for (int op : config.mixOperations()) {
+                        if (isUploadTask(op)) {
+                            needsUploadBuffer = true;
+                            break;
+                        }
+                    }
+                } else if (isUploadTask(config.testCaseCode())) {
+                    needsUploadBuffer = true;
+                }
+                
+                if (needsUploadBuffer || (config.testCaseCode() == 202 && config.enableDataValidation())) {
                     ByteBuffer buffer = ByteBuffer.allocateDirect((int) config.objectSize());
                     context.setPatternBuffer(buffer);
                     if (config.enableDataValidation()) {
@@ -53,20 +73,31 @@ public class WorkerTask implements Runnable {
                 }
             }
 
-            if (config.testCaseCode() == 202 && config.enableDataValidation()) {
-                // 下载对拍专用缓冲，64KB 足够流转
+            if ((config.testCaseCode() == 202 || config.testCaseCode() == 900) && config.enableDataValidation()) {
+                // Download verification buffer (64KB is sufficient)
                 context.setReceiveBuffer(ByteBuffer.allocateDirect(64 * 1024));
             }
 
-            // 汇报：本线程军火已装填完毕！
+            // [Architect's note]: Initialize Detail Logger if enabled
+            if (config.enableDetailLog()) {
+                String logFile = String.format("%s/detail_%d_part0.csv", taskDir, workerId);
+                try {
+                    this.detailWriter = new java.io.PrintWriter(new java.io.BufferedWriter(new java.io.FileWriter(logFile)));
+                    this.detailWriter.println("ThreadID,RequestID,Operation,ObjectKey,StartTimeMs,LatencyMs,StatusCode,ObsRequestId");
+                } catch (java.io.IOException e) {
+                    System.err.println("[WARN] Worker-" + workerId + " failed to init detail log: " + e.getMessage());
+                }
+            }
+
+            // Report: This thread is armed and ready!
             readyLatch.countDown();
             
-            // 【关键阻塞】：在这里死等主线程扣动发令枪，保证绝对的“同时起跑”
+            // [Critical Barrier]: Wait for the main thread to pull the trigger for a simultaneous start
             startGun.await();
 
             // =========================================================
-            // Phase 2: 极限发流阶段 (Execution Loop)
-            // 警告：以下代码块内，严禁调用 new 关键字，严禁产生阻塞日志
+            // Phase 2: Extreme Execution Loop
+            // Warning: No 'new' keyword or blocking logs allowed in this block!
             // =========================================================
             long seq = 0;
             long startTimeMs = System.currentTimeMillis();
@@ -76,66 +107,116 @@ public class WorkerTask implements Runnable {
             IObsClientAdapter adapter = context.getAdapter();
             String targetBucket = context.getTargetBucket();
             ByteBuffer payloadBuffer = context.getPatternBuffer();
-            int testCase = config.testCaseCode();
+            int baseTestCase = config.testCaseCode();
 
+            // MIX Mode 900 helper variables
+            int[] mixOps = config.mixOperations();
+            int mixOpsCount = mixOps != null ? mixOps.length : 0;
+            long reqsPerBatch = config.requestsPerThread(); // In MIX mode, RequestsPerThread acts as batch size
+            
             while (true) {
-                // 1. 跳出条件检查 (极速位移比较)
-                if (System.currentTimeMillis() >= endTimeMs || seq >= maxRequests) {
+                // 1. Exit condition check
+                if (System.currentTimeMillis() >= endTimeMs) {
                     break;
                 }
-
-                // 2. 零分配生成对象名
-                HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getCredential().username(), context.getThreadId(), seq, config.objNamePatternHash());
-                String objectKey = keyBuilder.toString(); // 这是整个循环中唯一不可避免的微小对象创建
-
-                // 3. 重置 DirectBuffer 游标 (Zero-Copy 核心)
-                if (payloadBuffer != null) {
-                    payloadBuffer.rewind(); // 将 position 归 0，再次复用这块内存
+                
+                // If in MIX mode 900, we follow the Loop Count exit strategy if LoopCount > 0
+                if (baseTestCase == 900) {
+                    if (config.mixLoopCount() > 0 && seq >= (config.mixLoopCount() * mixOpsCount * reqsPerBatch)) {
+                        break;
+                    }
+                } else {
+                    if (seq >= maxRequests) break;
                 }
 
-                // 4. 发起请求并利用纳秒进行高精度计时
+                // 2. Operation and Object ID selection
+                int currentTestCase = baseTestCase;
+                long objectSeqId = seq;
+
+                if (baseTestCase == 900 && mixOpsCount > 0) {
+                    long currentBlockIdx = seq / reqsPerBatch;
+                    int mixIdx = (int) (currentBlockIdx % mixOpsCount);
+                    currentTestCase = mixOps[mixIdx];
+
+                    long currentLoopIteration = seq / (mixOpsCount * reqsPerBatch);
+                    long currentReqInBlock = seq % reqsPerBatch;
+                    objectSeqId = (currentLoopIteration * reqsPerBatch) + currentReqInBlock;
+                }
+
+                // 3. Zero-allocation object key generation
+                HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getCredential().username(), context.getThreadId(), objectSeqId, config.objNamePatternHash());
+                String objectKey = keyBuilder.toString();
+
+                // 4. Reset DirectBuffer cursor
+                if (payloadBuffer != null) {
+                    payloadBuffer.rewind();
+                }
+
+                // 5. Execute operation with high-precision timing
                 long reqStartNanos = System.nanoTime();
-                int statusCode = executeOperation(adapter, testCase, targetBucket, objectKey, payloadBuffer, context.getReceiveBuffer());
+                int statusCode = executeOperation(adapter, currentTestCase, targetBucket, objectKey, payloadBuffer, context.getReceiveBuffer());
                 long latencyNanos = System.nanoTime() - reqStartNanos;
 
-                // 5. 无锁累加统计数据
+                // 6. Thread-safe stats update
                 updateStats(statusCode, latencyNanos, config.objectSize());
+
+                // 7. Record detail log if enabled (Zero-GC style)
+                if (detailWriter != null) {
+                    csvBuilder.setLength(0);
+                    csvBuilder.append(workerId).append(',')
+                              .append(seq).append(',')
+                              .append(currentTestCase).append(',')
+                              .append(objectKey).append(',')
+                              .append(System.currentTimeMillis()).append(',');
+                    fastAppendDouble(csvBuilder, latencyNanos / 1_000_000.0, 3);
+                    csvBuilder.append(',').append(statusCode).append(',')
+                              .append(adapter.getLastRequestId());
+                    
+                    detailWriter.println(csvBuilder.toString());
+                }
 
                 seq++;
             }
 
         } catch (InterruptedException e) {
-            // 被主线程强制中断
+            // Forcefully interrupted by main thread
             Thread.currentThread().interrupt();
         } finally {
             // =========================================================
-            // Phase 3: 优雅收尾阶段 (Teardown)
+            // Phase 3: Teardown
             // =========================================================
-            // 汇报：本线程任务结束
+            if (detailWriter != null) {
+                detailWriter.flush();
+                detailWriter.close();
+            }
+            // Report: Thread task complete
             doneLatch.countDown();
         }
     }
 
     /**
-     * 业务路由：根据 TestCase 映射到具体接口
+     * Operation Router: Maps TestCase to the corresponding interface
      */
     private int executeOperation(IObsClientAdapter adapter, int testCaseCode, String bucket, String key, ByteBuffer payload, ByteBuffer receiveBuffer) {
         return switch (testCaseCode) {
             case 201 -> adapter.putObject(bucket, key, payload);
             case 202 -> adapter.getObject(bucket, key, null, payload, receiveBuffer);
             case 204 -> adapter.deleteObject(bucket, key);
-            // 这里未来可以扩充 216(Multipart) 和 230(Resumable)
-            default -> throw new IllegalArgumentException("未知的 TestCaseCode: " + testCaseCode);
+            // Future expansion for 216(Multipart) and 230(Resumable)
+            default -> throw new IllegalArgumentException("Unknown TestCaseCode: " + testCaseCode);
         };
     }
 
     /**
-     * 高性能无锁统计累加
+     * High-performance lock-free statistics update
      */
     private void updateStats(int statusCode, long latencyNanos, long objSize) {
-        // 总耗时累加
-        globalStats.totalLatencyNanos.add(latencyNanos);
-        // 如果接入了 HdrHistogram，可以加一句：globalStats.latencyHistogram.recordValue(latencyNanos);
+        // 2. Latency histogram record (HdrHistogram)
+        if (latencyNanos < 60000000000L) {
+            globalStats.latencyHistogram.recordValue(latencyNanos);
+        } else {
+            globalStats.latencyHistogram.recordValue(60000000000L - 1);
+        }
 
         if (statusCode >= 200 && statusCode < 300) {
             globalStats.successCount.increment();
@@ -149,15 +230,44 @@ public class WorkerTask implements Runnable {
         } else if (statusCode == 600) {
             globalStats.dataValidationFailCount.increment();
         } else {
-            // 包含了返回 0 的本地客户端异常
+            // Includes local client exceptions (returned as 0)
             globalStats.clientErrorCount.increment();
         }
     }
 
     /**
-     * 判断是否为需要加载数据的上传类用例
+     * Determines if the TestCase requires loading data (Upload types)
      */
     private boolean isUploadTask(int testCaseCode) {
         return testCaseCode == 201 || testCaseCode == 216 || testCaseCode == 230;
+    }
+
+    /**
+     * [Extreme Performance]: Fast double to string conversion with fixed precision.
+     * Avoids Double.toString() which allocates and is slow.
+     */
+    private void fastAppendDouble(StringBuilder sb, double val, int precision) {
+        if (Double.isNaN(val)) { sb.append("NaN"); return; }
+        if (Double.isInfinite(val)) { sb.append("Infinity"); return; }
+        
+        if (val < 0) { sb.append('-'); val = -val; }
+        
+        long multiplier = 1;
+        for (int i = 0; i < precision; i++) multiplier *= 10;
+        
+        long rounded = Math.round(val * multiplier);
+        sb.append(rounded / multiplier);
+        sb.append('.');
+        
+        long fractional = rounded % multiplier;
+        // Leading zeros for fractional part
+        long divisor = multiplier / 10;
+        while (divisor > 0 && fractional < divisor) {
+            sb.append('0');
+            divisor /= 10;
+        }
+        if (fractional > 0) {
+            sb.append(fractional);
+        }
     }
 }

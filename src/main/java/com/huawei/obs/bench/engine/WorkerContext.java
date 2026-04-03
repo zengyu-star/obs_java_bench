@@ -7,8 +7,8 @@ import com.huawei.obs.bench.config.UserCredential;
 import java.nio.ByteBuffer;
 
 /**
- * Worker 线程执行上下文 (Thread-Local)
- * 隔离了线程间的状态，避免高并发下的锁竞争与变量逃逸。
+ * Worker Thread Execution Context (Thread-Local)
+ * Isolates state between threads to avoid lock contention and variable escape.
  */
 public class WorkerContext {
 
@@ -16,17 +16,17 @@ public class WorkerContext {
     private final BenchConfig config;
     private final UserCredential credential;
     
-    // 真实发流或 Mock 发流的适配器
+    // Adapter for Real or Mock OBS traffic
     private final IObsClientAdapter adapter;
     
-    // 独立计算的 Target Bucket 名称
+    // Independently calculated Target Bucket name
     private final String targetBucket;
 
-    // 核心大杀器：预分配的零拷贝直接内存 (Direct Memory)
-    // 绝对不在压测循环里 new byte[]
+    // Core Performance: Pre-allocated Zero-Copy Direct Memory
+    // ABSOLUTELY NO 'new byte[]' in the benchmark loop!
     private ByteBuffer patternBuffer;
     
-    // 数据校验专用读缓冲，极小的一块直接内存 (例如 64KB)
+    // Read buffer for data validation (e.g., 64KB)
     private ByteBuffer receiveBuffer;
 
     public WorkerContext(int threadId, BenchConfig config, UserCredential credential, IObsClientAdapter adapter) {
@@ -35,12 +35,12 @@ public class WorkerContext {
         this.credential = credential;
         this.adapter = adapter;
         
-        // 【关键逻辑】：动态确定目标桶名
+        // [Critical Logic]: Dynamically determine target bucket name
         if (config.bucketNameFixed() != null && !config.bucketNameFixed().isBlank()) {
-            // 模式 A: 使用全局固定桶名
+            // Mode A: Use global fixed bucket name
             this.targetBucket = config.bucketNameFixed();
         } else {
-            // 模式 B: 使用租户独立的动态桶名 {ak_lowercase}.{prefix}
+            // Mode B: Use tenant-specific dynamic bucket name {accessKey_lowercase}.{prefix}
             this.targetBucket = credential.accessKey().toLowerCase() + "." + config.bucketNamePrefix();
         }
     }
@@ -64,25 +64,25 @@ public class WorkerContext {
     }
 
     /**
-     * 高性能预填充伪随机数据 (Zero-GC LCG)
-     * 使用 SplitMix64 算法根据固定种子生成确定性的、无热点的比特流。
+     * High-performance pre-filling of pseudo-random data (Zero-GC LCG)
+     * Uses SplitMix64 algorithm with a fixed seed per thread to generate deterministic bitstreams.
      */
     public void fillPatternBuffer() {
         if (patternBuffer == null) {
             return;
         }
-        long seed = 0x1234567890ABCDEFL ^ threadId; // 线程私有的固定种子
+        long seed = 0x1234567890ABCDEFL ^ threadId; // Fixed seed per thread
         patternBuffer.clear();
         while (patternBuffer.remaining() >= 8) {
             seed = com.huawei.obs.bench.utils.HashUtil.splitMix64(seed);
             patternBuffer.putLong(seed);
         }
-        // 填剩余零散字节
+        // Fill remaining bytes
         while (patternBuffer.hasRemaining()) {
             seed = com.huawei.obs.bench.utils.HashUtil.splitMix64(seed);
             patternBuffer.put((byte) seed);
         }
-        // 写入完成，切换为读模式供上传或后续对拍
+        // Switch to read mode for upload or verification
         patternBuffer.flip();
     }
 }

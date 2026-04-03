@@ -8,88 +8,104 @@ import com.huawei.obs.bench.engine.ExecutionScheduler;
 import com.huawei.obs.bench.monitor.BenchmarkStats;
 import com.huawei.obs.bench.monitor.MonitorService;
 
+import com.huawei.obs.bench.utils.LogUtil;
 import java.io.File;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
- * obs_java_bench 核心启动类 (The Entrypoint)
- * 职责：组装四大平面，初始化依赖项，扣动压测总开关。
+ * obs_java_bench Core Entrypoint
+ * Responsibility: Assemble planes, initialize dependencies, and trigger the benchmark.
  */
 public class Bootstrap {
 
     public static void main(String[] args) {
-        printBanner();
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        String taskDir = "logs/task_" + timestamp;
+        new File(taskDir).mkdirs();
 
-        // 1. 确定配置文件路径 (默认读取 conf 目录，支持通过参数覆盖)
-        String configPath = args.length > 0 ? args[0] : "conf/config.dat";
-        String usersPath = args.length > 1 ? args[1] : "conf/users.dat";
+        printHeader(taskDir);
+
+        // 1. Smart CLI Argument Parsing
+        String configPath = "config.dat";
+        String usersPath = "users.dat";
+        Integer testCaseCodeOverride = null;
+
+        for (String arg : args) {
+            if (arg.matches("\\d{3}")) {
+                testCaseCodeOverride = Integer.parseInt(arg);
+            } else if (arg.endsWith(".dat") || !arg.contains(".")) {
+                if (configPath.equals("config.dat") && new File(arg).exists() && arg.contains("config")) {
+                     configPath = arg;
+                } else if (usersPath.equals("users.dat") && new File(arg).exists() && arg.contains("users")) {
+                     usersPath = arg;
+                } else {
+                    if (configPath.equals("config.dat")) configPath = arg;
+                    else usersPath = arg;
+                }
+            }
+        }
 
         if (!new File(configPath).exists() || !new File(usersPath).exists()) {
-            System.err.println("[致命错误] 找不到配置文件！");
-            System.err.printf("请确保 %s 和 %s 文件存在。\n", configPath, usersPath);
+            LogUtil.error("MAIN", "Configuration files not found!");
+            System.err.printf("Please ensure %s and %s exist.\n", configPath, usersPath);
             System.exit(1);
         }
 
         try {
-            // ==============================================================
-            // Phase 1: 控制面 (Control Plane) 初始化
-            // ==============================================================
-            System.out.println("[Bootstrap] 正在加载配置文件...");
+            LogUtil.info("MAIN", "Loading configuration...");
             BenchConfig config = ConfigLoader.loadConfig(configPath);
+            
+            if (testCaseCodeOverride != null) {
+                LogUtil.info("MAIN", "CLI Override detected! Using TestCaseCode: " + testCaseCodeOverride);
+                config = config.withTestCaseCode(testCaseCodeOverride);
+            }
+
+            // C-style Config Summary
+            LogUtil.config(String.format("Multi-User Mode: %d Users Loaded. %d Threads/User. Total Threads: %d", 
+                    config.usersCount(), config.threadsPerUser(), config.getTotalThreads()));
+            LogUtil.config("Data Validation: " + (config.enableDataValidation() ? "ENABLED" : "DISABLED"));
+            LogUtil.config("Detail Request Log: " + (config.enableDetailLog() ? "ENABLED" : "DISABLED"));
+            LogUtil.config("Object Size: " + config.objectSize() + " Bytes");
+
             List<UserCredential> users = ConfigLoader.loadUsers(usersPath, config.usersCount());
 
-            System.out.println("[Bootstrap] 正在初始化底层连接池...");
-            // 单例管理器：集中初始化所有的 ObsClient 并接管其生命周期
+            LogUtil.info("MAIN", "Initializing connection pool...");
             ObsClientManager clientManager = ObsClientManager.getInstance();
             clientManager.initClients(config, users);
 
-            // 注册 JVM 钩子：当接收到 Ctrl+C 或 kill 信号时，强制释放底层的网络连接资源
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("\n[ShutdownHook] 收到退出信号，正在优雅释放资源...");
+                LogUtil.warn("MAIN", "Exit signal received. Releasing resources...");
                 clientManager.shutdownAll();
+                LogUtil.info("MAIN", "Resources fully released.");
             }, "Obs-Shutdown-Hook"));
 
-            // ==============================================================
-            // Phase 2: 数据面 (Data Plane) 初始化
-            // ==============================================================
             BenchmarkStats globalStats = new BenchmarkStats();
-            MonitorService monitorService = new MonitorService(globalStats);
+            MonitorService monitorService = new MonitorService(globalStats, config, taskDir);
 
-            // ==============================================================
-            // Phase 3: 调度面 (Scheduler Plane) 组装并点火
-            // ==============================================================
-            ExecutionScheduler scheduler = new ExecutionScheduler(config, globalStats);
-            
-            // 将控制权交给调度器，主线程将在此阻塞直到压测结束
+            ExecutionScheduler scheduler = new ExecutionScheduler(config, globalStats, taskDir);
             scheduler.startBenchmark(users, monitorService);
 
+            LogUtil.info("MAIN", "Execution report saved to: " + taskDir + "/brief.txt");
+
         } catch (IllegalArgumentException | IllegalStateException e) {
-            // 捕获配置错误，拒绝打印长篇大论的堆栈，直接给测试人员最清晰的错误提示
-            System.err.println("\n[启动失败 - 配置或状态异常] " + e.getMessage());
+            System.err.println("\n[Startup Failed - Configuration Error] " + e.getMessage());
             System.exit(1);
         } catch (InterruptedException e) {
-            System.err.println("\n[启动失败] 压测主流程被强行中断！");
+            System.err.println("\n[Startup Failed] Benchmark was interrupted!");
             Thread.currentThread().interrupt();
             System.exit(1);
         } catch (Exception e) {
-            System.err.println("\n[系统异常] 发生未捕获的严重错误：");
-            e.printStackTrace();
+            System.err.println("\n[System Error] " + e.getMessage());
             System.exit(1);
         }
     }
 
-    /**
-     * 打印极客风的启动 Banner
-     */
-    private static void printBanner() {
-        System.out.println("===============================================================");
-        System.out.println("   ____  ____  _____     __                  ____                  __  ");
-        System.out.println("  / __ \\/ __ )/ ___/    / /___ __   ______ _/ __ )___  ____  _____/ /_ ");
-        System.out.println(" / / / / __  /\\__ \\_   / / __ `/ | / / __ `/ __  / _ \\/ __ \\/ ___/ __ \\");
-        System.out.println("/ /_/ / /_/ /___/ / | / / /_/ /| |/ / /_/ / /_/ /  __/ / / / /__/ / / /");
-        System.out.println("\\____/_____//____/| |/ /\\__,_/ |___/\\__,_/_____/\\___/_/ /_/\\___/_/ /_/ ");
-        System.out.println("                  |___/                                                ");
-        System.out.println("       HUAWEI Cloud OBS High-Performance Benchmark Tool (Java Edition)");
-        System.out.println("===============================================================");
+    private static void printHeader(String taskDir) {
+        System.out.println("---------------------------------------------------------------");
+        LogUtil.info("MAIN", "--- OBS Java Benchmark Tool ---");
+        LogUtil.info("MAIN", "Task Output Dir: " + taskDir);
+        System.out.println("---------------------------------------------------------------");
     }
 }

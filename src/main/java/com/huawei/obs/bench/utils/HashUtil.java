@@ -1,40 +1,41 @@
 package com.huawei.obs.bench.utils;
 
 /**
- * 压测核心散列算法工具类
- * 采用 SplitMix64 算法确保对象名的强一致性与高离散度，彻底消除云端热点。
- * 核心架构要求：本类的所有方法必须是 Zero-GC（零垃圾回收），严禁内部 new 对象。
+ * Core Hashing Utility for Benchmarking
+ * Implements the SplitMix64 algorithm to ensure strong consistency and high dispersion of object names,
+ * effectively eliminating cloud-side hotspots.
+ * Core Architectural Requirement: All methods must be Zero-GC (zero garbage collection); internal 'new' operations are strictly prohibited.
  */
 public class HashUtil {
 
-    // 预加载 Hex 字符字典，加速位运算映射
+    // Pre-loaded Hex character dictionary to accelerate bitwise mapping
     private static final char[] HEX_ARRAY = "0123456789abcdef".toCharArray();
 
     /**
-     * 生成高离散、无热点且确定性的 ObjectKey
+     * Generates a high-dispersion, hotspot-free, and deterministic ObjectKey
      *
-     * @param sb            Worker 线程复用的 StringBuilder，避免产生中间 String 对象
-     * @param keyPrefix     对象名前缀
-     * @param username      执行压测的用户名
-     * @param threadId      当前发流的并发编号 (线程 ID)
-     * @param seq           当前并发中的操作序号
-     * @param hashEnabled   是否开启哈希前缀打散
+     * @param sb            StringBuilder reused by the Worker thread to avoid intermediate String objects
+     * @param keyPrefix     Prefix for the object name
+     * @param username      Username performing the benchmark
+     * @param threadId      Concurrency ID (Thread ID) for the current flow
+     * @param seq           Sequence number within the current concurrency
+     * @param hashEnabled   Whether to enable hash prefix dispersion
      */
     public static void generateObjectKey(StringBuilder sb, String keyPrefix, String username, int threadId, long seq, boolean hashEnabled) {
-        // 1. 清空复用的缓冲区
+        // 1. Clear the reused buffer
         sb.setLength(0);
 
-        // 2. 核心哈希打散逻辑
+        // 2. Core Hash Dispersion Logic
         if (hashEnabled) {
-            // 利用并发编号和序号作为强确定性的 Seed
+            // Use concurrency ID and sequence as a strongly deterministic Seed
             long seed = ((long) threadId << 32) ^ seq;
 
-            // 极致性能：连续生成 128 位数据转换为 32 位十六进制前缀
+            // Extreme Performance: Generate 128-bit data converted to a 32-character hex prefix
             appendHex32(sb, seed);
             sb.append("-");
         }
 
-        // 3. 按照用户要求拼接：KeyPrefix-用户名-并发编号-序号
+        // 3. Concatenate according to requirements: KeyPrefix-Username-ThreadID-Sequence
         sb.append(keyPrefix).append("-")
           .append(username).append("-")
           .append(threadId).append("-")
@@ -42,9 +43,9 @@ public class HashUtil {
     }
 
     /**
-     * Java 版的 SplitMix64 散列算法
-     * 特点：极简的位运算，极其刚猛的雪崩效应（输入改变 1 bit，输出改变约 50% bit）。
-     * 完全无状态、无锁、极高吞吐。
+     * Java Implementation of the SplitMix64 Hashing Algorithm
+     * Features: Minimal bitwise operations; extremely strong avalanche effect (1-bit input change leads to approx. 50% bit change in output).
+     * Completely stateless, lock-free, and exceptionally high throughput.
      */
     public static long splitMix64(long seed) {
         long z = (seed + 0x9e3779b97f4a7c15L);
@@ -54,20 +55,20 @@ public class HashUtil {
     }
 
     /**
-     * 高性能生成 32 位十六进制前缀 (128 位哈希等效长度)
+     * High-performance generation of a 32-character hex prefix (equivalent to 128-bit hash length)
      */
     private static void appendHex32(StringBuilder sb, long seed) {
-        // 第一轮：生成高 64 位 (16 字符)
+        // Round 1: Generate high 64 bits (16 characters)
         long hash1 = splitMix64(seed);
         appendHex16(sb, hash1);
         
-        // 第二轮：使用上一次哈希作为种子生成低 64 位 (16 字符)
+        // Round 2: Generate low 64 bits (16 characters) using the previous hash as seed
         long hash2 = splitMix64(hash1);
         appendHex16(sb, hash2);
     }
 
     /**
-     * 极速 16 位十六进制转换器
+     * High-speed 16-character hex converter
      */
     private static void appendHex16(StringBuilder sb, long value) {
         for (int i = 60; i >= 0; i -= 4) {

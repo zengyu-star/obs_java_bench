@@ -9,15 +9,21 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 
 /**
- * 真实的 OBS 客户端适配器 (Execution Plane - Real Implementation)
- * 职责：对接华为云官方 Java SDK，执行真实的物理网络请求。
+ * Real OBS Client Adapter (Execution Plane - Real Implementation)
+ * Responsibility: Interfaces with the official Huawei Cloud Java SDK to execute physical network requests.
  */
 public class RealObsAdapter implements IObsClientAdapter {
 
     private final ObsClient obsClient;
+    private String lastRequestId = ""; // [New]: Track last request ID for detail logging
 
     public RealObsAdapter(ObsClient obsClient) {
         this.obsClient = obsClient;
+    }
+
+    @Override
+    public String getLastRequestId() {
+        return lastRequestId;
     }
 
     @Override
@@ -27,19 +33,20 @@ public class RealObsAdapter implements IObsClientAdapter {
             request.setBucketName(bucketName);
             request.setObjectKey(objectKey);
             
-            // 【架构师优化】：通过自定义流，将 Direct ByteBuffer 直接传给 SDK，避免 byte[] 拷贝
+            // [Architect Optimization]: Pass Direct ByteBuffer to SDK via custom stream to avoid byte[] copying
             if (payload != null) {
                 request.setInput(new ByteBufferInputStream(payload));
             }
 
             PutObjectResult result = obsClient.putObject(request);
+            this.lastRequestId = result.getRequestId();
             return result.getStatusCode();
 
         } catch (ObsException e) {
-            // 参考 SDK 开发指南，捕获服务端返回的 HTTP 状态码
+            this.lastRequestId = e.getErrorRequestId();
             return e.getResponseCode();
         } catch (Exception e) {
-            // 客户端本地异常（如网络断开、DNS 解析失败等）返回 0
+            this.lastRequestId = "CLIENT_ERROR";
             return 0;
         }
     }
@@ -54,16 +61,19 @@ public class RealObsAdapter implements IObsClientAdapter {
             }
 
             ObsObject obsObject = obsClient.getObject(request);
+            this.lastRequestId = (obsObject.getMetadata() != null) ? obsObject.getMetadata().getRequestId() : "UNKNOWN";
             
-            // 【关键】：必须彻底消耗并关闭 InputStream，否则连接池资源会耗尽
-            // 在此一并执行 Zero-GC 数据校验
+            // [Critical]: InputStream must be fully consumed and closed to prevent connection pool exhaustion.
+            // Also performs Zero-GC data validation here.
             boolean isValid = consumeAndVerifyStream(obsObject.getObjectContent(), expectedPattern, receiveBuffer);
             
             return isValid ? 200 : 600;
 
         } catch (ObsException e) {
+            this.lastRequestId = e.getErrorRequestId();
             return e.getResponseCode();
         } catch (Exception e) {
+            this.lastRequestId = "CLIENT_ERROR";
             return 0;
         }
     }
@@ -72,10 +82,13 @@ public class RealObsAdapter implements IObsClientAdapter {
     public int deleteObject(String bucketName, String objectKey) {
         try {
             DeleteObjectResult result = obsClient.deleteObject(bucketName, objectKey);
+            this.lastRequestId = result.getRequestId();
             return result.getStatusCode();
         } catch (ObsException e) {
+            this.lastRequestId = e.getErrorRequestId();
             return e.getResponseCode();
         } catch (Exception e) {
+            this.lastRequestId = "CLIENT_ERROR";
             return 0;
         }
     }
@@ -83,12 +96,12 @@ public class RealObsAdapter implements IObsClientAdapter {
     @Override
     public int multipartUpload(String bucketName, String objectKey, ByteBuffer payload, int partCount, long partSize) {
         try {
-            // 1. 初始化分段
+            // 1. Initialize multipart upload
             InitiateMultipartUploadRequest initRequest = new InitiateMultipartUploadRequest(bucketName, objectKey);
             InitiateMultipartUploadResult initResult = obsClient.initiateMultipartUpload(initRequest);
             String uploadId = initResult.getUploadId();
 
-            // 2. 循环上传段 (压测简化版：此处可根据需要引入线程内并发)
+            // 2. Loop through parts (Simple version: sequential upload; can be parallelized per thread if needed)
             java.util.List<PartEtag> etags = new java.util.ArrayList<>();
             for (int i = 1; i <= partCount; i++) {
                 UploadPartRequest partRequest = new UploadPartRequest();
@@ -97,7 +110,7 @@ public class RealObsAdapter implements IObsClientAdapter {
                 partRequest.setUploadId(uploadId);
                 partRequest.setPartNumber(i);
                 
-                // 模拟切片：重置 position 并读取固定长度
+                // Slice simulation: Reset position and read fixed length
                 payload.position((int) ((i - 1) * partSize));
                 partRequest.setInput(new ByteBufferInputStream(payload));
                 partRequest.setPartSize(partSize);
@@ -106,7 +119,7 @@ public class RealObsAdapter implements IObsClientAdapter {
                 etags.add(new PartEtag(partResult.getEtag(), partResult.getPartNumber()));
             }
 
-            // 3. 合并分段
+            // 3. Complete multipart upload
             CompleteMultipartUploadRequest completeRequest = new CompleteMultipartUploadRequest(bucketName, objectKey, uploadId, etags);
             CompleteMultipartUploadResult result = obsClient.completeMultipartUpload(completeRequest);
             return result.getStatusCode();
@@ -121,7 +134,7 @@ public class RealObsAdapter implements IObsClientAdapter {
     @Override
     public int resumableUpload(String bucketName, String objectKey, String filePath, int taskNum, long partSize, boolean enableCheckpoint) {
         try {
-            // 使用 SDK 封装的高阶断点续传接口
+            // Use SDK's high-level resumable upload interface
             UploadFileRequest request = new UploadFileRequest(bucketName, objectKey);
             request.setUploadFile(filePath);
             request.setTaskNum(taskNum);
@@ -138,7 +151,7 @@ public class RealObsAdapter implements IObsClientAdapter {
     }
 
     /**
-     * 高性能排空输入流，并在需要时进行 Zero-GC 对拍校验
+     * High-performance stream consumption with optional Zero-GC pattern verification
      */
     private boolean consumeAndVerifyStream(InputStream in, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
         if (in == null) return false;
@@ -150,31 +163,31 @@ public class RealObsAdapter implements IObsClientAdapter {
 
         try (in) {
             if (isValidationEnabled) {
-                // 如果开启了强一致校验
+                // Consistency validation enabled
                 byte[] underlyingReadArray;
                 int readCapacity;
                 
-                // 如果是 DirectBuffer 没有 backing array，则在栈或堆上借用极小的流转空间
+                // If DirectBuffer without backing array, use a small heap buffer for transfer
                 if (receiveBuffer.hasArray()) {
                     underlyingReadArray = receiveBuffer.array();
                     readCapacity = receiveBuffer.capacity();
                 } else {
                     readCapacity = receiveBuffer.capacity();
-                    underlyingReadArray = new byte[readCapacity]; // 不得已进行首次极小分配，在连接池中可被逃逸分析优化
+                    underlyingReadArray = new byte[readCapacity]; // Small initial allocation; can be optimized by Escape Analysis
                 }
 
                 int bytesRead;
                 byte[] expectedArray = expectedPattern.hasArray() ? expectedPattern.array() : null;
 
                 while ((bytesRead = in.read(underlyingReadArray, 0, readCapacity)) != -1) {
-                    if (!isValid) continue; // 损坏后仅排空防止泄露
+                    if (!isValid) continue; // After corruption, just drain to prevent pool leaks
                     
                     for (int i = 0; i < bytesRead; i++) {
                         int expectedIndex = (int) (bytesProcessed % patternSize);
                         byte expectedByte = expectedArray != null ? expectedArray[expectedIndex] : expectedPattern.get(expectedIndex);
                         
                         if (underlyingReadArray[i] != expectedByte) {
-                            System.err.printf("[ERROR] 数据完整性校验失败！对象数据在偏移量 %d 处发生不一致。\n", bytesProcessed);
+                            System.err.printf("[ERROR] Data integrity validation failed! Inconsistency detected at offset %d.\n", bytesProcessed);
                             isValid = false;
                             break;
                         }
@@ -182,7 +195,7 @@ public class RealObsAdapter implements IObsClientAdapter {
                     }
                 }
             } else {
-                // 不进行校验，极速排空
+                // Drain as fast as possible without validation
                 byte[] drain = new byte[8192];
                 while (in.read(drain) != -1) {}
             }
@@ -193,7 +206,7 @@ public class RealObsAdapter implements IObsClientAdapter {
         return isValid;
     }
 
-    // 简单的 Range 解析逻辑 (示例: "0-1024")
+    // Simple Range parsing logic (Example: "0-1024")
     private long parseRangeStart(String range) {
         return Long.parseLong(range.split("-")[0]);
     }

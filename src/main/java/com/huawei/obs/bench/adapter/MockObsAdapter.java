@@ -5,8 +5,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
 
 /**
- * OBS 模拟适配器 (Execution Plane - Mock Implementation)
- * 职责：在内存中模拟网络延迟和 HTTP 状态码，用于压测工具的离线自测和逻辑验证。
+ * OBS Mock Adapter (Execution Plane - Mock Implementation)
+ * Responsibility: Simulate network latency and HTTP status codes in memory for offline testing and logic verification.
  */
 public class MockObsAdapter implements IObsClientAdapter {
 
@@ -14,9 +14,9 @@ public class MockObsAdapter implements IObsClientAdapter {
     private final int errorRateTenThousandths;
 
     /**
-     * 构造 Mock 适配器
-     * @param avgLatencyMs 模拟的平均网络时延 (毫秒)
-     * @param errorRateTenThousandths 模拟的服务端错误率 (单位：万分比)
+     * Construct Mock Adapter
+     * @param avgLatencyMs Simulated average network latency (ms)
+     * @param errorRateTenThousandths Simulated server-side error rate (unit: 1/10000)
      */
     public MockObsAdapter(long avgLatencyMs, int errorRateTenThousandths) {
         this.avgLatencyMs = avgLatencyMs;
@@ -32,19 +32,19 @@ public class MockObsAdapter implements IObsClientAdapter {
     @Override
     public int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
         simulateNetworkLatency();
-        // 如果是 Range 下载，成功码通常是 206
+        // For Range downloads, success code is usually 206
         return simulateStatusCode(range == null ? 200 : 206);
     }
 
     @Override
     public int deleteObject(String bucketName, String objectKey) {
         simulateNetworkLatency();
-        return simulateStatusCode(204); // Delete 成功通常返回 204 No Content
+        return simulateStatusCode(204); // Success for Delete usually returns 204 No Content
     }
 
     @Override
     public int multipartUpload(String bucketName, String objectKey, ByteBuffer payload, int partCount, long partSize) {
-        // 模拟分段上传的多次交互耗时
+        // Simulate latency for multiple interactions in multipart upload
         for (int i = 0; i < partCount; i++) {
             simulateNetworkLatency();
         }
@@ -58,14 +58,14 @@ public class MockObsAdapter implements IObsClientAdapter {
     }
 
     /**
-     * 模拟网络延迟
-     * 架构师优化：使用 LockSupport.parkNanos 代替 Thread.sleep。
-     * 因为 parkNanos 不会抛出 InterruptedException，且精度更高，对系统调度更友好。
+     * Simulate network latency
+     * Architect's note: Use LockSupport.parkNanos instead of Thread.sleep.
+     * parkNanos does not throw InterruptedException, has higher precision, and is friendlier to system scheduling.
      */
     private void simulateNetworkLatency() {
         if (avgLatencyMs <= 0) return;
 
-        // 生成 ±20% 的随机抖动 (Jitter)，模拟真实网络波动
+        // Generate random jitter (±20%) to simulate real network fluctuations
         double jitterFactor = 0.8 + (ThreadLocalRandom.current().nextDouble() * 0.4);
         long sleepNanos = (long) (avgLatencyMs * jitterFactor * 1_000_000L);
         
@@ -73,8 +73,8 @@ public class MockObsAdapter implements IObsClientAdapter {
     }
 
     /**
-     * 模拟 HTTP 状态码分布
-     * 用于验证 MonitorService 是否能正确统计 403/404/5xx 等异常
+     * Simulate HTTP Status Code distribution
+     * Used to verify if MonitorService correctly tracks 403/404/5xx anomalies
      */
     private int simulateStatusCode(int successCode) {
         if (errorRateTenThousandths <= 0) return successCode;
@@ -84,12 +84,17 @@ public class MockObsAdapter implements IObsClientAdapter {
             return successCode;
         }
 
-        // 随机分配错误类型
+        // Randomly assign error types
         int errorType = rand % 3;
         return switch (errorType) {
             case 0 -> 403; // AccessDenied
             case 1 -> 404; // NoSuchKey
             default -> 500; // InternalError
         };
+    }
+
+    @Override
+    public String getLastRequestId() {
+        return "MOCK_REQ_" + ThreadLocalRandom.current().nextInt(1000000);
     }
 }

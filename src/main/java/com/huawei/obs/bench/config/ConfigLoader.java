@@ -9,63 +9,102 @@ import java.util.List;
 import java.util.Properties;
 
 /**
- * 压测配置与凭证加载器
- * 负责解析 config.dat (Properties格式) 和 users.dat (CSV格式)
+ * Config and Credential Loader
+ * Responsible for parsing config.dat (Properties) and users.dat (CSV)
  */
 public class ConfigLoader {
 
     /**
-     * 加载全局压测配置
-     * @param configPath config.dat 文件路径
-     * @return 强类型的 BenchConfig 对象
+     * Load Global Benchmark Configuration
+     * @param configPath Path to config.dat
+     * @return Strongly-typed BenchConfig object
      */
     public static BenchConfig loadConfig(String configPath) {
         Properties props = new Properties();
         try (FileInputStream in = new FileInputStream(configPath)) {
             props.load(in);
         } catch (IOException e) {
-            throw new RuntimeException("[致命错误] 无法读取配置文件: " + configPath + "。请检查文件是否存在！", e);
+            throw new RuntimeException("[Fatal] Cannot read configuration file: " + configPath + ". Please check if it exists!", e);
         }
 
-        // 采用容错机制解析，并提供合理的默认值
         try {
+            // Parse basic fields
+            String endpoint = props.getProperty("Endpoint", "obs.cn-north-4.myhuaweicloud.com").trim();
+            String protocol = props.getProperty("Protocol", "https").trim();
+            boolean isTemporaryToken = Boolean.parseBoolean(props.getProperty("IsTemporaryToken", "false"));
+
+            int maxConnections = Integer.parseInt(props.getProperty("MaxConnections", "2000"));
+            int socketTimeoutMs = Integer.parseInt(props.getProperty("SocketTimeoutMs", "60000"));
+            int connectionTimeoutMs = Integer.parseInt(props.getProperty("ConnectionTimeoutMs", "30000"));
+
+            int usersCount = Integer.parseInt(props.getProperty("UsersCount", "1"));
+            int threadsPerUser = Integer.parseInt(props.getProperty("ThreadsPerUser", "1"));
+            long runSeconds = parseRunSeconds(props.getProperty("RunSeconds"));
+            long requestsPerThread = parseRequestsPerThread(props.getProperty("RequestsPerThread"));
+
+            int testCaseCode = Integer.parseInt(props.getProperty("TestCaseCode", "201"));
+
+            String bucketNameFixed = props.getProperty("BucketNameFixed", "").trim();
+            String bucketNamePrefix = props.getProperty("BucketNamePrefix", "bench-bucket").trim();
+            String keyPrefix = props.getProperty("KeyPrefix", "bench_test_").trim();
+            long objectSize = Long.parseLong(props.getProperty("ObjectSize", "1048576"));
+            long partSize = Long.parseLong(props.getProperty("PartSize", "5242880"));
+
+            boolean objNamePatternHash = Boolean.parseBoolean(props.getProperty("ObjNamePatternHash", "true"));
+            boolean enableDataValidation = Boolean.parseBoolean(props.getProperty("EnableDataValidation", "false"));
+            boolean enableDetailLog = Boolean.parseBoolean(props.getProperty("EnableDetailLog", "false"));
+            boolean isMockMode = Boolean.parseBoolean(props.getProperty("IsMockMode", "false"));
+
+            // Parse Mixed Mode 900 fields
+            int[] mixOperations = parseMixOperations(props.getProperty("MixOperation", ""));
+            long mixLoopCount = parseLongOrDefault(props.getProperty("MixLoopCount", ""), 0);
+
             return new BenchConfig(
-                props.getProperty("Endpoint", "obs.cn-north-4.myhuaweicloud.com").trim(),
-                props.getProperty("Protocol", "https").trim(),
-                Boolean.parseBoolean(props.getProperty("IsTemporaryToken", "false")),
-
-                Integer.parseInt(props.getProperty("MaxConnections", "2000")),
-                Integer.parseInt(props.getProperty("SocketTimeoutMs", "60000")),
-                Integer.parseInt(props.getProperty("ConnectionTimeoutMs", "30000")),
-
-                Integer.parseInt(props.getProperty("UsersCount", "1")),
-                Integer.parseInt(props.getProperty("ThreadsPerUser", "1")),
-                parseRunSeconds(props.getProperty("RunSeconds")),
-                parseRequestsPerThread(props.getProperty("RequestsPerThread")),
-
-                Integer.parseInt(props.getProperty("TestCaseCode", "201")),
-
-                props.getProperty("BucketNameFixed", "").trim(),
-                props.getProperty("BucketNamePrefix", "bench-bucket").trim(),
-                props.getProperty("KeyPrefix", "bench_test_").trim(),
-                Long.parseLong(props.getProperty("ObjectSize", "1048576")),
-                Long.parseLong(props.getProperty("PartSize", "5242880")),
-
-                Boolean.parseBoolean(props.getProperty("ObjNamePatternHash", "true")),
-                Boolean.parseBoolean(props.getProperty("EnableDataValidation", "false")),
-                Boolean.parseBoolean(props.getProperty("EnableDetailLog", "false")),
-                Boolean.parseBoolean(props.getProperty("IsMockMode", "false"))
+                endpoint, protocol, isTemporaryToken,
+                maxConnections, socketTimeoutMs, connectionTimeoutMs,
+                usersCount, threadsPerUser, runSeconds, requestsPerThread,
+                testCaseCode,
+                bucketNameFixed, bucketNamePrefix, keyPrefix, objectSize, partSize,
+                objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
+                mixOperations, mixLoopCount
             );
         } catch (NumberFormatException e) {
-            throw new RuntimeException("[致命错误] config.dat 中存在非法的数字格式，请检查！", e);
+            throw new RuntimeException("[Fatal] Invalid number format in config.dat, please check values!", e);
+        }
+    }
+
+    private static int[] parseMixOperations(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return new int[0];
+        }
+        String[] parts = raw.split(",");
+        int[] ops = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            try {
+                ops[i] = Integer.parseInt(parts[i].trim());
+            } catch (NumberFormatException e) {
+                // Ignore invalid codes
+            }
+        }
+        return ops;
+    }
+
+    private static long parseLongOrDefault(String raw, long defaultValue) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return defaultValue;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
         }
     }
 
     /**
-     * 加载多租户用户凭证
-     * @param usersPath users.dat 文件路径
-     * @param requiredCount config 中声明的 UsersCount
-     * @return 用户凭证列表
+     * Load Multi-tenant Credentials
+     * @param usersPath Path to users.dat
+     * @param requiredCount UsersCount declared in config
+     * @return List of credentials
      */
     public static List<UserCredential> loadUsers(String usersPath, int requiredCount) {
         List<UserCredential> users = new ArrayList<>();
@@ -78,37 +117,37 @@ public class ConfigLoader {
                 lineNumber++;
                 line = line.trim();
                 
-                // 跳过空行和以 # 开头的注释行
+                // Skip empty lines and comments starting with #
                 if (line.isEmpty() || line.startsWith("#")) {
                     continue;
                 }
 
-                // 假设 users.dat 的格式为: username,ak,sk,[sts_token]
+                // Format: username,ak,sk,[sts_token]
                 String[] parts = line.split(",");
                 if (parts.length < 3) {
-                    System.err.println("[WARN] users.dat 第 " + lineNumber + " 行格式不正确，已跳过: " + line);
+                    System.err.println("[WARN] users.dat line " + lineNumber + " format incorrect, skipped: " + line);
                     continue;
                 }
 
                 String username = parts[0].trim();
                 String ak = parts[1].trim();
                 String sk = parts[2].trim();
-                // 如果启用了临时凭证，则读取第四列，否则设为 null
+                // If temporary credentials are enabled, read the 4th column (security_token) if present
                 String token = parts.length > 3 ? parts[3].trim() : null;
                 
-                // originalAk 用于后续如果需要基于 AK 拼接独立的 Bucket 名称
+                // originalAk used for potential bucket name construction based on AK
                 String originalAk = ak;
 
                 users.add(new UserCredential(username, ak, sk, token, originalAk));
             }
         } catch (IOException e) {
-            throw new RuntimeException("[致命错误] 无法读取用户凭证文件: " + usersPath, e);
+            throw new RuntimeException("[Fatal] Cannot read users file: " + usersPath, e);
         }
 
-        // 防呆校验：配置的并发用户数大于实际提供的凭证数
+        // Validation: Required users count vs actual parsed credentials
         if (users.size() < requiredCount) {
             throw new RuntimeException(String.format(
-                "[致命错误] config.dat 声明需要 %d 个用户，但 users.dat 中只解析到了 %d 个有效用户！", 
+                "[Fatal] config.dat requires %d users, but only %d valid users found in users.dat!", 
                 requiredCount, users.size()
             ));
         }
@@ -117,38 +156,38 @@ public class ConfigLoader {
     }
 
     /**
-     * 解析 RunSeconds 参数：大于0的整数或为空(返回0)
+     * Parses RunSeconds parameter: Must be a positive integer or empty (returns 0)
      */
     private static long parseRunSeconds(String rawValue) {
         if (rawValue == null || rawValue.trim().isEmpty()) {
-            return 0; // 空表示不限时长
+            return 0; // Empty means no duration limit
         }
         try {
             long value = Long.parseLong(rawValue.trim());
             if (value <= 0) {
-                throw new IllegalArgumentException("[致命错误] RunSeconds 必须为空，或者大于 0 的整数值，不允许配置为 0（当前输入: \"" + rawValue + "\"）");
+                throw new IllegalArgumentException("[Fatal] RunSeconds must be empty or a positive integer, 0 is not allowed (Current input: \"" + rawValue + "\")");
             }
             return value;
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("[致命错误] RunSeconds 格式非法，必须为空，或者大于 0 的整数值（当前输入: \"" + rawValue + "\"）");
+            throw new IllegalArgumentException("[Fatal] Invalid RunSeconds format, must be empty or a positive integer (Current input: \"" + rawValue + "\")");
         }
     }
 
     /**
-     * 解析 RequestsPerThread 参数：必须是大于0的整数
+     * Parses RequestsPerThread parameter: Must be a non-negative integer
      */
     private static long parseRequestsPerThread(String rawValue) {
         if (rawValue == null || rawValue.trim().isEmpty()) {
-            throw new IllegalArgumentException("[致命错误] RequestsPerThread 不能为空，必须配置为大于 0 的整数");
+            return 0; // Default to 0 (unlimited)
         }
         try {
             long value = Long.parseLong(rawValue.trim());
-            if (value <= 0) {
-                throw new IllegalArgumentException("[致命错误] RequestsPerThread 必须是大于 0 的整数（当前值: " + value + "）");
+            if (value < 0) {
+                throw new IllegalArgumentException("[Fatal] RequestsPerThread must be a non-negative integer (Current value: " + value + ")");
             }
             return value;
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("[致命错误] RequestsPerThread 格式非法，必须是大于 0 的整数（当前输入: \"" + rawValue + "\"）");
+            throw new IllegalArgumentException("[Fatal] Invalid RequestsPerThread format, must be a non-negative integer (Current input: \"" + rawValue + "\")");
         }
     }
 }

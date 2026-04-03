@@ -1,95 +1,100 @@
 package com.huawei.obs.bench.monitor;
 
+import com.huawei.obs.bench.config.BenchConfig;
+import com.huawei.obs.bench.utils.LogUtil;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * 旁路监控服务 (Data Plane - Monitor)
- * 负责每秒无锁读取全局统计看板，计算瞬时 TPS 与带宽，并在压测结束时输出 P99 长尾时延。
+ * Side-channel Monitoring Service (Data Plane - Monitor)
+ * Responsible for lock-free reading of global stats every second, calculating instantaneous TPS and bandwidth,
+ * and outputting the final P99 latency report at the end of the benchmark.
  */
 public class MonitorService {
 
     private final BenchmarkStats stats;
+    private final BenchConfig config;
+    private final String taskDir; // [New]: Output directory for task logs
     private final ScheduledExecutorService scheduler;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    // 状态快照：用于计算每一秒的差值 (Delta)
-    private long lastSuccessCount = 0;
-    private long lastBytesTransferred = 0;
     private long startTimeMs = 0;
+    private long totalPlannedRequests = 0;
+    private java.io.PrintWriter realtimeWriter; // [New]: Output stream for realtime.txt
 
-    public MonitorService(BenchmarkStats stats) {
+    public MonitorService(BenchmarkStats stats, BenchConfig config, String taskDir) {
         this.stats = stats;
-        // 【架构师优化】：监控线程必须是守护线程 (Daemon)，这样当压测 Worker 全部执行完毕时，
-        // JVM 可以直接退出，而不会被这个定时任务挂起阻塞。
+        this.config = config;
+        this.taskDir = taskDir;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "Bypass-Monitor-Thread");
             t.setDaemon(true);
             return t;
         });
-    }
 
-    /**
-     * 启动实时监控看板
-     */
-    public void start() {
-        if (isRunning.compareAndSet(false, true)) {
-            this.startTimeMs = System.currentTimeMillis();
-            System.out.println("\n[Monitor] 监控线程已启动，等待发令枪...");
-            System.out.println("=========================================================================================");
-            System.out.printf("%-10s | %-10s | %-15s | %-12s | %-25s\n", 
-                              "Time(s)", "TPS", "Bandwidth(MB/s)", "Total Succ", "Errors(403/404/5xx/Client/Valid)");
-            System.out.println("=========================================================================================");
-            
-            // 延迟 1 秒后开始，每隔 1 秒执行一次快照打印
-            scheduler.scheduleAtFixedRate(this::printMetricsSnapshot, 1, 1, TimeUnit.SECONDS);
+        // Pre-calculate total planned requests for progress display
+        if (config.testCaseCode() == 900 && config.mixLoopCount() > 0) {
+            this.totalPlannedRequests = config.mixLoopCount() * config.getTotalThreads() * config.mixOperations().length * config.requestsPerThread();
+        } else if (config.requestsPerThread() > 0) {
+            this.totalPlannedRequests = config.requestsPerThread() * config.getTotalThreads();
         }
     }
 
-    /**
-     * 核心逻辑：计算并打印 1 秒钟内的性能快照
-     */
-    private void printMetricsSnapshot() {
-        // 1. 无锁读取当前的 LongAdder 汇总值
-        // sum() 方法在高并发下是弱一致性的，但对于秒级瞬时监控来说，这种极其微小的偏差完全可以接受，换来的是零阻塞。
-        long currentSuccess = stats.successCount.sum();
-        long currentBytes = stats.totalBytesTransferred.sum();
-        
-        long err403 = stats.fail403Count.sum();
-        long err404 = stats.fail404Count.sum();
-        long err5xx = stats.fail5xxCount.sum();
-        long errClient = stats.clientErrorCount.sum();
-        long errValid = stats.dataValidationFailCount.sum();
+    public void start() {
+        if (isRunning.compareAndSet(false, true)) {
+            this.startTimeMs = System.currentTimeMillis();
+            try {
+                this.realtimeWriter = new java.io.PrintWriter(new java.io.FileWriter(taskDir + "/realtime.txt", true));
+            } catch (java.io.IOException e) {
+                System.err.println("[WARN] Failed to create realtime.txt: " + e.getMessage());
+            }
 
-        // 2. 计算与上一秒的差值 (Delta)，这就是瞬时 TPS
-        long deltaTps = currentSuccess - lastSuccessCount;
-        long deltaBytes = currentBytes - lastBytesTransferred;
-
-        // 3. 计算瞬时带宽 (MB/s)
-        double bandwidthMb = (double) deltaBytes / (1024 * 1024);
-
-        // 4. 计算已运行的时间 (秒)
-        long elapsedSeconds = (System.currentTimeMillis() - startTimeMs) / 1000;
-        elapsedSeconds = elapsedSeconds == 0 ? 1 : elapsedSeconds; // 避免出现 0 秒
-
-        // 5. 格式化打印控制台看板
-        String errorMetrics = String.format("%d / %d / %d / %d / %d", err403, err404, err5xx, errClient, errValid);
-        System.out.printf("%-10d | %-10d | %-15.2f | %-12d | %-25s\n",
-                elapsedSeconds, deltaTps, bandwidthMb, currentSuccess, errorMetrics);
-
-        // 6. 更新快照游标
-        lastSuccessCount = currentSuccess;
-        lastBytesTransferred = currentBytes;
+            System.out.println();
+            LogUtil.info("MONITOR", "Monitor thread started, waiting for start gun...");
+            
+            // Start after 3 seconds delay, execute snapshot printing every 3 seconds
+            scheduler.scheduleAtFixedRate(this::printMetricsSnapshot, 3, 3, TimeUnit.SECONDS);
+        }
     }
 
-    /**
-     * 停止监控并输出最终的 Benchmark 权威报告 (包含长尾时延)
-     */
+    private void printMetricsSnapshot() {
+        long currentSuccess = stats.successCount.sum();
+        long currentBytes = stats.totalBytesTransferred.sum();
+        long currentFail = stats.fail403Count.sum() + stats.fail404Count.sum() + stats.fail5xxCount.sum() + stats.clientErrorCount.sum();
+        long totalReqs = currentSuccess + currentFail;
+
+        long elapsedMs = System.currentTimeMillis() - startTimeMs;
+        double elapsedSec = elapsedMs / 1000.0;
+        if (elapsedSec < 0.1) elapsedSec = 0.1;
+
+        // Cumulative Metrics
+        double cumulTps = currentSuccess / elapsedSec;
+        double cumulBw = (double) currentBytes / (1024 * 1024) / elapsedSec;
+        double successRate = totalReqs == 0 ? 100.0 : (Double.valueOf(currentSuccess) / totalReqs) * 100.0;
+
+        // Progress calculation
+        double progress = 0.0;
+        if (config.runSeconds() > 0) {
+            progress = (elapsedSec / config.runSeconds()) * 100.0;
+        } else if (totalPlannedRequests > 0) {
+            progress = (Double.valueOf(totalReqs) / totalPlannedRequests) * 100.0;
+        }
+        if (progress > 100.0) progress = 100.0;
+
+        String logLine = String.format("[Monitor] RunTime: %10.1fs | Process: %6.2f%% | Cumul TPS: %8.2f | Cumul BW: %8.2f MB/s | Success Rate: %7.3f%% | Total Reqs: %d\n",
+                elapsedSec, progress, cumulTps, cumulBw, successRate, totalReqs);
+        
+        System.out.print(logLine);
+        if (realtimeWriter != null) {
+            realtimeWriter.print(logLine);
+            realtimeWriter.flush();
+        }
+    }
+
     public void stopAndPrintSummary() {
         if (isRunning.compareAndSet(true, false)) {
-            // 优雅关闭定时任务
             scheduler.shutdown();
             try {
                 scheduler.awaitTermination(2, TimeUnit.SECONDS);
@@ -97,31 +102,100 @@ public class MonitorService {
                 Thread.currentThread().interrupt();
             }
             
-            // 打印最终压测报告
-            long totalTimeSec = (System.currentTimeMillis() - startTimeMs) / 1000;
-            totalTimeSec = totalTimeSec == 0 ? 1 : totalTimeSec; 
+            long elapsedMs = System.currentTimeMillis() - startTimeMs;
+            double elapsedSec = elapsedMs / 1000.0;
+            if (elapsedSec < 0.1) elapsedSec = 0.1;
             
             long totalSuccess = stats.successCount.sum();
-            long totalBytes = stats.totalBytesTransferred.sum();
-            
-            double avgTps = (double) totalSuccess / totalTimeSec;
-            double avgBandwidth = (double) totalBytes / (1024 * 1024) / totalTimeSec;
+            long totalFail403 = stats.fail403Count.sum();
+            long totalFail404 = stats.fail404Count.sum();
+            long totalFail409 = 0; // Currently not tracked separately but can be
+            long totalFail5xx = stats.fail5xxCount.sum();
+            long totalFailClient = stats.clientErrorCount.sum();
+            long totalFailValid = stats.dataValidationFailCount.sum();
+            long totalFailOthers = 0;
 
-            System.out.println("\n================= 🏆 BENCHMARK FINAL SUMMARY 🏆 =================");
-            System.out.printf("Total Time Elapsed: %d seconds\n", totalTimeSec);
-            System.out.printf("Total Requests:     %d (Success)\n", totalSuccess);
-            System.out.printf("Average TPS:        %.2f req/s\n", avgTps);
-            System.out.printf("Average Bandwidth:  %.2f MB/s\n", avgBandwidth);
-            System.out.println("-------------------------------------------------------------------");
+            long totalFail = totalFail403 + totalFail404 + totalFail409 + totalFail5xx + totalFailClient + totalFailValid + totalFailOthers;
+            long totalRequests = totalSuccess + totalFail;
+
+            double avgTps = (double) totalSuccess / elapsedSec;
+            double avgBandwidth = (double) stats.totalBytesTransferred.sum() / (1024 * 1024) / elapsedSec;
+ 
+            java.io.PrintWriter briefWriter = null;
+            try {
+                briefWriter = new java.io.PrintWriter(new java.io.FileWriter(taskDir + "/brief.txt"));
+            } catch (java.io.IOException e) {
+                System.err.println("[WARN] Failed to create brief.txt: " + e.getMessage());
+            }
+
+            printAndFile(briefWriter, "===========================================");
+            printAndFile(briefWriter, "      OBS Java Benchmark Execution Report ");
+            printAndFile(briefWriter, "===========================================");
+            printAndFile(briefWriter, "Execution Time:      " + LogUtil.getTimestamp());
+            printAndFile(briefWriter, "---------------- Configuration ----------------");
+            printAndFile(briefWriter, "[Environment]");
+            printAndFile(briefWriter, String.format("  Endpoint:          %s", config.endpoint()));
+            printAndFile(briefWriter, String.format("  Bucket(Fixed):     %s", config.bucketNameFixed().isEmpty() ? "N/A" : config.bucketNameFixed()));
+            printAndFile(briefWriter, String.format("  Bucket(Prefix):    %s", config.bucketNamePrefix().isEmpty() ? "N/A" : config.bucketNamePrefix()));
+            printAndFile(briefWriter, String.format("  STS Auth Mode:     %s", config.isTemporaryToken()));
+            printAndFile(briefWriter, "[Network]");
+            printAndFile(briefWriter, String.format("  Protocol:          %s", config.protocol()));
+            printAndFile(briefWriter, String.format("  ConnectTimeout:    %d ms", config.connectionTimeoutMs()));
+            printAndFile(briefWriter, String.format("  SocketTimeout:     %d ms", config.socketTimeoutMs()));
+            printAndFile(briefWriter, "[TestPlan]");
+            printAndFile(briefWriter, String.format("  Total Threads:     %d (%d Users x %d Threads/User)", 
+                    config.getTotalThreads(), config.usersCount(), config.threadsPerUser()));
+            printAndFile(briefWriter, String.format("  RunSeconds:        %d (%s)", 
+                    config.runSeconds(), config.runSeconds() == 0 ? "No Limit" : "Limit Enabled"));
             
-            // 利用 HdrHistogram 秒级输出高精度时延 (从纳秒转换为毫秒)
-            System.out.println("[Latency Distribution]");
-            System.out.printf("  P50 (Median):  %.2f ms\n", stats.latencyHistogram.getValueAtPercentile(50.0) / 1_000_000.0);
-            System.out.printf("  P90 Latency:   %.2f ms\n", stats.latencyHistogram.getValueAtPercentile(90.0) / 1_000_000.0);
-            System.out.printf("  P99 Latency:   %.2f ms\n", stats.latencyHistogram.getValueAtPercentile(99.0) / 1_000_000.0);
-            System.out.printf("  P99.9 Latency: %.2f ms\n", stats.latencyHistogram.getValueAtPercentile(99.9) / 1_000_000.0);
-            System.out.printf("  Max Latency:   %.2f ms\n", stats.latencyHistogram.getMaxValue() / 1_000_000.0);
-            System.out.println("===================================================================\n");
+            String testMode = (config.testCaseCode() == 900) ? "Batch Mixed Mode (900)" : "Standard TestCase (" + config.testCaseCode() + ")";
+            printAndFile(briefWriter, String.format("  TestMode:          %s", testMode));
+            printAndFile(briefWriter, String.format("  Reqs/Thread:       %d", config.requestsPerThread()));
+            
+            printAndFile(briefWriter, "[ObjectSettings]");
+            printAndFile(briefWriter, String.format("  ObjectSize:        %d bytes", config.objectSize()));
+            printAndFile(briefWriter, String.format("  PartSize:          %d bytes", config.partSize()));
+            printAndFile(briefWriter, String.format("  KeyPrefix:         %s", config.keyPrefix()));
+            printAndFile(briefWriter, String.format("  KeyHashPrefix:     %s", config.objNamePatternHash()));
+            printAndFile(briefWriter, "[Advanced]");
+            printAndFile(briefWriter, String.format("  DataValidation:    %s", config.enableDataValidation()));
+            printAndFile(briefWriter, String.format("  DetailLog:         %s", config.enableDetailLog()));
+            printAndFile(briefWriter, String.format("  MockMode:          %s", config.isMockMode()));
+
+            printAndFile(briefWriter, "---------------- Statistics -------------------");
+            printAndFile(briefWriter, String.format("Actual Duration: %.2f s", elapsedSec));
+            printAndFile(briefWriter, String.format("Total Requests:  %d", totalRequests));
+            printAndFile(briefWriter, String.format("Success:         %d", totalSuccess));
+            printAndFile(briefWriter, String.format("Failed:          %d", totalFail));
+            printAndFile(briefWriter, String.format("  |- 403 (Forbidden):  %d", totalFail403));
+            printAndFile(briefWriter, String.format("  |- 404 (NotFound):   %d", totalFail404));
+            printAndFile(briefWriter, String.format("  |- 409 (Conflict):   %d", totalFail409));
+            printAndFile(briefWriter, String.format("  |- 4xx (Other):      %d", 0)); 
+            printAndFile(briefWriter, String.format("  |- 5xx (Server):     %d", totalFail5xx));
+            printAndFile(briefWriter, String.format("  |- Other (Net/SDK):  %d", totalFailClient));
+            printAndFile(briefWriter, String.format("  |- Internal Validation Fail: %d", totalFailValid));
+            
+            printAndFile(briefWriter, "\nPerformance:");
+            printAndFile(briefWriter, String.format("  Final TPS:           %.2f", avgTps));
+            printAndFile(briefWriter, String.format("  Final Throughput:    %.2f MB/s", avgBandwidth));
+
+            printAndFile(briefWriter, "\n[Latency Distribution]");
+            printAndFile(briefWriter, String.format("  P50 (Median):  %.2f ms", stats.latencyHistogram.getValueAtPercentile(50.0) / 1_000_000.0));
+            printAndFile(briefWriter, String.format("  P90 Latency:   %.2f ms", stats.latencyHistogram.getValueAtPercentile(90.0) / 1_000_000.0));
+            printAndFile(briefWriter, String.format("  P99 Latency:   %.2f ms", stats.latencyHistogram.getValueAtPercentile(99.0) / 1_000_000.0));
+            printAndFile(briefWriter, String.format("  P99.9 Latency: %.2f ms", stats.latencyHistogram.getValueAtPercentile(99.9) / 1_000_000.0));
+            printAndFile(briefWriter, String.format("  Max Latency:   %.2f ms", stats.latencyHistogram.getMaxValue() / 1_000_000.0));
+            printAndFile(briefWriter, "===========================================\n");
+
+            if (briefWriter != null) briefWriter.close();
+            if (realtimeWriter != null) realtimeWriter.close();
+        }
+    }
+
+    private void printAndFile(java.io.PrintWriter writer, String line) {
+        System.out.println(line);
+        if (writer != null) {
+            writer.println(line);
         }
     }
 }

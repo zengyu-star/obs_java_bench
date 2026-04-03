@@ -3,62 +3,67 @@ package com.huawei.obs.bench.adapter;
 import java.nio.ByteBuffer;
 
 /**
- * OBS 客户端适配器接口 (Execution Plane - Adapter Interface)
- * 职责：定义压测所需的标准操作，屏蔽底层 SDK 差异。
- * 架构要求：返回值必须是 HTTP 状态码（int），以实现极速的状态统计。
+ * OBS Client Adapter Interface (Execution Plane - Adapter Interface)
+ * Responsibility: Defines standard operations required for benchmarking, shielding underlying SDK differences.
+ * Architectural Requirement: Return values must be HTTP status codes (int) for high-speed statistics.
  */
 public interface IObsClientAdapter {
 
     /**
-     * TestCase 201: 普通对象上传 (PUT Object)
-     * @param bucketName 目标桶名
-     * @param objectKey 对象键名
-     * @param payload 待上传的数据流 (Direct ByteBuffer)
-     * @return HTTP 状态码 (如 200, 403, 500)
+     * TestCase 201: Simple Object Upload (PUT Object)
+     * @param bucketName Target bucket name
+     * @param objectKey Target object key
+     * @param payload Data stream to upload (Direct ByteBuffer)
+     * @return HTTP status code (e.g., 200, 403, 500)
      */
     int putObject(String bucketName, String objectKey, ByteBuffer payload);
 
     /**
-     * TestCase 202: 普通对象下载 (GET Object)
-     * @param bucketName 目标桶名
-     * @param objectKey 对象键名
-     * @param range 下载范围 (例如 "bytes=0-1024")，为 null 则执行全量下载
-     * @param expectedPattern 用于数据校验的期望比特流 (Pattern Buffer)
-     * @param receiveBuffer 用于消费和对拍的预分配接收缓冲
-     * @return HTTP 状态码 (如 200, 206, 404, 或 600 代表数据损坏)
+     * TestCase 202: Simple Object Download (GET Object)
+     * @param bucketName Target bucket name
+     * @param objectKey Target object key
+     * @param range Download range (e.g., "bytes=0-1024"); if null, performs full download
+     * @param expectedPattern Expected bitstream for data verification (Pattern Buffer)
+     * @param receiveBuffer Pre-allocated buffer for consumption and verification
+     * @return HTTP status code (e.g., 200, 206, 404, or 600 for data corruption)
      */
     int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer);
 
     /**
-     * TestCase 204: 删除对象 (DELETE Object)
-     * @param bucketName 目标桶名
-     * @param objectKey 对象键名
-     * @return HTTP 状态码 (如 204)
+     * TestCase 204: Delete Object (DELETE Object)
+     * @param bucketName Target bucket name
+     * @param objectKey Target object key
+     * @return HTTP status code (e.g., 204)
      */
     int deleteObject(String bucketName, String objectKey);
 
     /**
-     * TestCase 216: 分段上传 (Multipart Upload)
-     * 内部逻辑：Init -> UploadParts -> Complete
-     * @param bucketName 目标桶名
-     * @param objectKey 对象键名
-     * @param payload 待上传的完整数据流
-     * @param partCount 分段总数
-     * @param partSize 每段大小
-     * @return 最终状态码
+     * TestCase 216: Multipart Upload (Multipart Upload)
+     * Internal Logic: Init -> UploadParts -> Complete
+     * @param bucketName Target bucket name
+     * @param objectKey Target object key
+     * @param payload Complete data stream to upload
+     * @param partCount Total number of parts
+     * @param partSize Size of each part
+     * @return Final status code
      */
     int multipartUpload(String bucketName, String objectKey, ByteBuffer payload, int partCount, long partSize);
 
     /**
-     * TestCase 230: 断点续传上传 (Resumable Upload)
-     * 利用 SDK 封装的高阶接口进行大文件并发上传
-     * @param bucketName 目标桶名
-     * @param objectKey 对象键名
-     * @param filePath 本地文件路径
-     * @param taskNum 并发线程数
-     * @param partSize 分段大小
-     * @param enableCheckpoint 是否开启断点续传
-     * @return 最终状态码
+     * TestCase 230: Resumable Upload (Resumable Upload)
+     * Uses high-level SDK interfaces for concurrent large file uploads.
+     * @param bucketName Target bucket name
+     * @param objectKey Target object key
+     * @param filePath Path to local file
+     * @param taskNum Concurrency thread count for the task
+     * @param partSize Part size
+     * @param enableCheckpoint Whether to enable resumable checkpoints
+     * @return Final status code
      */
     int resumableUpload(String bucketName, String objectKey, String filePath, int taskNum, long partSize, boolean enableCheckpoint);
+
+    /**
+     * Fetches the latest OBS RequestId (for detailed log tracing)
+     */
+    String getLastRequestId();
 }

@@ -9,14 +9,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * OBS 客户端管理器 (Control Plane - Singleton)
- * 职责：管理多租户 ObsClient 实例及其生命周期，并针对压测场景优化底层 HTTP 连接池。
+ * OBS Client Manager (Control Plane - Singleton)
+ * Responsibility: Manage Multi-tenant ObsClient instances and optimize HTTP connection pool.
  */
 public class ObsClientManager {
 
     private static final ObsClientManager INSTANCE = new ObsClientManager();
 
-    // 客户端池：Key 为 username，支持多租户并发压测
+    // Client pool: Key is username, supporting multi-tenant concurrent benchmarking
     private final Map<String, ObsClient> clientPool = new ConcurrentHashMap<>();
 
     private ObsClientManager() {
@@ -27,76 +27,77 @@ public class ObsClientManager {
     }
 
     /**
-     * 根据配置批量初始化所有租户的 ObsClient
-     * * @param config 全局压测配置
-     * @param users  用户凭证列表
+     * Initialize ObsClient pool for multiple tenants
+     * @param config Global benchmark configuration
+     * @param users  List of user credentials
      */
     public void initClients(BenchConfig config, List<UserCredential> users) {
-        // 1. 构建高并发压测专用配置
+        // 1. Build configuration optimized for high-concurrency benchmarking
         ObsConfiguration obsConfig = new ObsConfiguration();
         obsConfig.setEndPoint(config.endpoint());
         obsConfig.setHttpsOnly("https".equalsIgnoreCase(config.protocol()));
 
-        // 【架构师调优】：设置底层 HTTP 连接池最大并发数。
-        // 必须确保 MaxConnections >= 总线程数，否则 Worker 线程会因拿不到连接而阻塞。
+        // [Architect Tuning]: Set max concurrent connections for the underlying HTTP pool.
+        // Must ensure MaxConnections >= total threads, otherwise Worker threads will block.
         obsConfig.setMaxConnections(config.maxConnections());
         
-        // 设置超时时间
+        // Set timeout values
         obsConfig.setSocketTimeout(config.socketTimeoutMs());
         obsConfig.setConnectionTimeout(config.connectionTimeoutMs());
 
-        // 【架构师调优】：压测场景通常不建议开启过多的自动重试，以免掩盖真实的服务端压力波动
+        // [Architect Tuning]: Excessive auto-retries are not recommended in benchmarking 
+        // to avoid masking real server-side pressure fluctuations.
         obsConfig.setMaxErrorRetry(1);
 
-        System.out.printf("[ObsClientManager] 正在为 %d 个用户初始化连接池 (MaxConnections: %d)...\n", 
+        System.out.printf("[ObsClientManager] Initializing connection pool for %d users (MaxConnections: %d)...\n", 
                           users.size(), config.maxConnections());
 
-        // 2. 为每个用户凭证创建独立的 ObsClient 实例
+        // 2. Create independent ObsClient instances for each user credential
         for (UserCredential user : users) {
             ObsClient client;
             try {
                 if (config.isTemporaryToken() && user.isStsToken()) {
-                    // 使用临时 AK/SK/Token 初始化
+                    // Initialize using temporary AK/SK/Token
                     client = new ObsClient(user.accessKey(), user.secretKey(), user.securityToken(), obsConfig);
                 } else {
-                    // 使用永久 AK/SK 初始化
+                    // Initialize using permanent AK/SK
                     client = new ObsClient(user.accessKey(), user.secretKey(), obsConfig);
                 }
                 clientPool.put(user.username(), client);
             } catch (Exception e) {
-                System.err.printf("[致命错误] 无法为用户 %s 初始化 ObsClient: %s\n", user.username(), e.getMessage());
-                throw new RuntimeException("ObsClient 初始化失败", e);
+                System.err.printf("[Fatal Error] Failed to initialize ObsClient for user %s: %s\n", user.username(), e.getMessage());
+                throw new RuntimeException("ObsClient initialization failed", e);
             }
         }
-        System.out.println("[ObsClientManager] 客户端池初始化完成。");
+        System.out.println("[ObsClientManager] Client pool initialization complete.");
     }
 
     /**
-     * 获取指定用户的 ObsClient 实例
+     * Get the ObsClient instance for a specific user
      */
     public ObsClient getClient(String username) {
         ObsClient client = clientPool.get(username);
         if (client == null) {
-            throw new IllegalStateException("未找到用户 [" + username + "] 对应的 ObsClient 实例，请检查初始化逻辑。");
+            throw new IllegalStateException("ObsClient instance not found for user [" + username + "], please check initialization logic.");
         }
         return client;
     }
 
     /**
-     * 优雅停机：关闭所有客户端并释放底层连接池资源
+     * Graceful shutdown: Close all clients and release underlying connection pool resources
      */
     public void shutdownAll() {
-        System.out.println("[ObsClientManager] 正在关闭所有 ObsClient 并释放连接资源...");
+        System.out.println("[ObsClientManager] Closing all ObsClients and releasing connection resources...");
         clientPool.forEach((username, client) -> {
             try {
-                // 必须显示调用 close()，否则底层的 OkHttp 线程池可能不会立即退出
+                // Must explicitly call close(), otherwise the underlying OkHttp thread pool may not exit immediately
                 client.close();
             } catch (IOException e) {
-                // 停机时的异常仅记录，不影响主流程退出
-                System.err.println("关闭客户端失败: " + username);
+                // Log exceptions during shutdown, do not block the main exit flow
+                System.err.println("Failed to close client: " + username);
             }
         });
         clientPool.clear();
-        System.out.println("[ObsClientManager] 资源已完全释放。");
+        System.out.println("[ObsClientManager] Resources fully released.");
     }
 }

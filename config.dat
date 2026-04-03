@@ -1,0 +1,60 @@
+# ===============================================================
+# OBS Java Bench Global Configuration File
+# ===============================================================
+
+# [1. Basic Network & Authentication]
+# OBS Service Endpoint (e.g., obs.ap-southeast-1.myhuaweicloud.com)
+Endpoint=obs.ap-southeast-1.myhuaweicloud.com
+# Protocol (https/http)
+Protocol=http
+# Whether to use STS temporary credentials (true/false)
+IsTemporaryToken=false
+
+# [2. Low-level Java Connection Pool Tuning]
+# Max concurrent connections (Arch suggestion: >= UsersCount * ThreadsPerUser)
+MaxConnections=2000
+# Socket read timeout (milliseconds)
+SocketTimeoutMs=60000
+# TCP connection timeout (milliseconds)
+ConnectionTimeoutMs=30000
+
+# [3. Benchmark Concurrency & Exit Strategy]
+# Number of concurrent users (corresponds to rows in users.dat)
+UsersCount=1
+# Threads opened per user
+ThreadsPerUser=10
+# Benchmark duration (seconds), empty means unlimited
+RunSeconds=60
+# Max requests per thread
+RequestsPerThread=200
+# [4. Test Case Routing]
+# TestCase choices: 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
+TestCaseCode=201
+
+# Mixed Workload Configuration (Active only if TestCaseCode=900)
+# MixOperation: List of operations involved in the mix, comma-separated
+MixOperation=201,202,204
+# MixLoopCount: Number of execution loops (0 means governed by global duration/request limits)
+MixLoopCount=0
+
+# [5. Object & Data Attributes]
+# Fixed Bucket Name (Highest priority, shared by all tenants if configured)
+BucketNameFixed=zengyu-test
+# Dynamic Bucket Name Prefix (Effective if BucketNameFixed is empty, format: ak.prefix)
+BucketNamePrefix=
+# Object Key Prefix
+KeyPrefix=java_bench_test_
+# Single object size in Bytes (e.g., 1048576 for 1MB)
+ObjectSize=1048576
+# Part size for multipart uploads in Bytes (e.g., 5242880 for 5MB)
+PartSize=5242880
+
+# [6. Advanced Architectural Features]
+# Whether to enable hash prefixes in object names (prevents hotspots)
+ObjNamePatternHash=false
+# Whether to enable Zero-GC data validation
+EnableDataValidation=false
+# Whether to enable asynchronous detail logging (detail.csv)
+EnableDetailLog=true
+# Whether to enable offline Mock mode (true means no real network requests)
+IsMockMode=false

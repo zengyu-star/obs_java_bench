@@ -1,87 +1,106 @@
 package com.huawei.obs.bench.config;
 
 /**
- * 全局压测配置模型 (Immutable Record)
- * 映射 config.dat 中的所有参数。
- * 采用 Record 保证高并发下的绝对线程安全。
+ * Global Benchmark Configuration Model (Immutable Record)
+ * Maps to all parameters in config.dat.
+ * Uses Record to ensure absolute thread-safety under high concurrency.
  */
 public record BenchConfig(
     // ==========================================
-    // 1. 基础网络与认证配置
+    // 1. Basic Network & Authentication
     // ==========================================
     String endpoint,
-    String protocol,           // http 或 https
-    boolean isTemporaryToken,  // 是否使用 STS 临时凭证
+    String protocol,           // http or https
+    boolean isTemporaryToken,  // Whether to use STS temporary credentials
 
     // ==========================================
-    // 2. Java 底层连接池调优
+    // 2. Low-level Java Connection Pool Tuning
     // ==========================================
-    int maxConnections,        // 底层 HTTP 最大并发连接数
-    int socketTimeoutMs,       // Socket 读写超时
-    int connectionTimeoutMs,   // 建连超时
+    int maxConnections,        // Max concurrent connections in the underlying HTTP pool
+    int socketTimeoutMs,       // Socket read/write timeout
+    int connectionTimeoutMs,   // Connection establishing timeout
 
     // ==========================================
-    // 3. 压测并发模型与跳出策略
+    // 3. Benchmark Concurrency & Exit Strategy
     // ==========================================
-    int usersCount,            // 并发用户数
-    int threadsPerUser,        // 单用户并发线程数
-    long runSeconds,           // 压测总时长(秒)，0代表不限制
-    long requestsPerThread,    // 单线程最大请求数，0代表不限制
+    int usersCount,            // Number of concurrent users
+    int threadsPerUser,        // Concurrent threads per user
+    long runSeconds,           // Total benchmark duration (seconds), 0 means unlimited
+    long requestsPerThread,    // Max requests per thread, 0 means unlimited
 
     // ==========================================
-    // 4. 测试用例路由
+    // 4. Test Case Routing
     // ==========================================
-    int testCaseCode,          // 用例编码: 201, 202, 216 等
+    int testCaseCode,          // Code: 201, 202, 216, etc.
 
     // ==========================================
-    // 5. 对象与数据属性
+    // 5. Object & Data Attributes
     // ==========================================
-    String bucketNameFixed,    // 固定桶名 (优先级最高)
-    String bucketNamePrefix,   // 动态桶名前缀 (ak.prefix)
-    String keyPrefix,          // 对象名前缀
-    long objectSize,           // 单个对象大小(Bytes)
-    long partSize,             // 分段大小(Bytes)
+    String bucketNameFixed,    // Fixed bucket name (highest priority)
+    String bucketNamePrefix,   // Dynamic bucket prefix (ak.prefix)
+    String keyPrefix,          // Object name prefix
+    long objectSize,           // Single object size (Bytes)
+    long partSize,             // Part size (Bytes)
 
     // ==========================================
-    // 6. 高级架构特性
+    // 6. Advanced Architectural Features
     // ==========================================
-    boolean objNamePatternHash,   // 是否开启一致性 Hash 打散
-    boolean enableDataValidation, // 是否开启 LCG 零拷贝校验
-    boolean enableDetailLog,      // 是否开启流水异步落盘
-    boolean isMockMode            // 是否为离线自测 Mock 模式
+    boolean objNamePatternHash,   // Whether to enable consistent hash scattering
+    boolean enableDataValidation, // Whether to enable LCG zero-copy validation
+    boolean enableDetailLog,      // Whether to enable asynchronous detail logging
+    boolean isMockMode,           // Whether to enable offline Mock mode
+
+    // ==========================================
+    // 7. Mixed Workload Mode 900
+    // ==========================================
+    int[] mixOperations,          // List of operation codes for MIX mode
+    long mixLoopCount             // Number of cycles for MIX mode
 ) {
     /**
-     * 紧凑型构造器 (Compact Constructor)
-     * 在这里可以加入架构师级别的防御性校验，确保错误配置在启动时就被拦截，而不是在压测中途崩溃
+     * Compact Constructor
+     * Includes defensive validations to catch misconfigurations at startup.
      */
     public BenchConfig {
-        // 1. 并发参数校验
+        // 1. Concurrency Parameter Validation
         if (usersCount <= 0) {
-            throw new IllegalArgumentException("UsersCount 必须大于 0");
+            throw new IllegalArgumentException("UsersCount must be > 0");
         }
         if (threadsPerUser <= 0) {
-            throw new IllegalArgumentException("ThreadsPerUser 必须大于 0");
+            throw new IllegalArgumentException("ThreadsPerUser must be > 0");
         }
 
-        // 2. 连接池安全校验：防止底层连接池饿死 Worker 线程
+        // 2. Connection Pool Safety Validation: Prevent Worker starvation
         int totalThreads = usersCount * threadsPerUser;
         if (maxConnections < totalThreads) {
-            System.err.printf("[WARN] 配置风险: MaxConnections (%d) 小于总并发线程数 (%d)。" +
-                    "这会导致大量线程阻塞等待连接。建议调大 MaxConnections！\n", maxConnections, totalThreads);
+            System.err.printf("[WARN] Config Risk: MaxConnections (%d) is less than total concurrent threads (%d). " +
+                    "This may cause significant blocking. Please increase MaxConnections!\n", maxConnections, totalThreads);
         }
 
-        // 3. 跳出条件校验
-        // 用户要求：RunSeconds 为空（解析为 0）时不限时长。
-        // 但 RequestsPerThread 强制要求 > 0，因此压测将在完成指定请求数后自动停止。
+        // 3. Exit Condition Validation
         if (runSeconds == 0) {
-             System.out.println("[INFO] RunSeconds 为空，压测将进入时长不限模式，直到各线程完成 " + requestsPerThread + " 次请求为止。");
+             System.out.println("[INFO] RunSeconds is empty. Benchmark will run until each thread completes " + requestsPerThread + " requests.");
         }
     }
 
     /**
-     * 获取全局总并发线程数
+     * Get total global concurrent threads
      */
     public int getTotalThreads() {
         return usersCount * threadsPerUser;
+    }
+
+    /**
+     * Create a new BenchConfig with a modified testCaseCode (CLI override)
+     */
+    public BenchConfig withTestCaseCode(int code) {
+        return new BenchConfig(
+            endpoint, protocol, isTemporaryToken,
+            maxConnections, socketTimeoutMs, connectionTimeoutMs,
+            usersCount, threadsPerUser, runSeconds, requestsPerThread,
+            code, // The override
+            bucketNameFixed, bucketNamePrefix, keyPrefix, objectSize, partSize,
+            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
+            mixOperations, mixLoopCount
+        );
     }
 }
