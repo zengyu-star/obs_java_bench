@@ -20,3 +20,6 @@ This project is a high-performance benchmarking engine. All future development, 
 ## 4. Architecture & Dependencies
 - **Minimal Dependencies**: Aside from the core OBS SDK (`esdk-obs-java`), `Log4j2`, and `HdrHistogram`, the introduction of any heavy frameworks (like Spring, Guava, etc.) is strictly prohibited.
 - **Low-Level Abstraction**: Must use Java NIO's `DirectByteBuffer` for off-heap memory interaction and bridge via `ByteBufferInputStream` to prevent data copying through intermediate `byte[]`.
+
+## 5. Version Control & Operational Safety
+- **No Unprompted Git Commits**: DO NOT automatically execute `git commit` or `git push` to GitHub unless the user explicitly and proactively requests it.
