@@ -1,0 +1,22 @@
+# obs_java_bench MCP Rules & Development Guidelines
+
+This project is a high-performance benchmarking engine. All future development, refactoring, and AI interactions must strictly adhere to the following core directives:
+
+## 1. Extreme Performance & Zero-GC (Core Directive)
+- **NO Allocations in Hot Paths**: Strictly prohibit the use of the `new` keyword to create objects within the main execution loop (e.g., `WorkerTask` Phase 2) or data verification streams.
+- **Object Reuse**: Must use `ThreadLocal` or thread-private reusable objects (such as `StringBuilder` and `ByteBuffer`).
+- **NO Native String Concatenation**: Prohibit the use of `String + String` or `String.format` in the benchmark loop. Always use pre-allocated `StringBuilder`.
+- **Avoid System Overheads**: Prohibit the use of standard library methods that allocate internal objects in hot paths (e.g., `Double.toString()`). Use the provided Zero-GC algorithms (like `fastAppendDouble`).
+
+## 2. High Concurrency & Lock-Free Computing
+- **NO CAS Spin Locks**: In the global statistics dashboard (`BenchmarkStats`), strictly prohibit the use of `AtomicLong` for high-frequency accumulation. Must use `LongAdder` for heat dispersion.
+- **Long-Tail Latency**: Prohibit the use of `List` or arrays to record latencies. Must use `ConcurrentHistogram` from `HdrHistogram` to guarantee low and fixed memory footprint.
+- **Synchronization Primitives**: Mandatory use of `CountDownLatch` as a "Start Gun" to ensure all threads begin execution simultaneously, maintaining fairness and explosive pressure during concurrent testing.
+
+## 3. Global Internationalization (100% English)
+- **No Chinese Characters**: All source code, comments, variable names, configuration parameters, and console logs MUST NEVER contain non-ASCII Chinese characters.
+- **Professional Terminology**: Must use standard English computer science terminology (e.g., Zero-GC, ThreadLocal, Latency, Throughput, Long-Tail).
+
+## 4. Architecture & Dependencies
+- **Minimal Dependencies**: Aside from the core OBS SDK (`esdk-obs-java`), `Log4j2`, and `HdrHistogram`, the introduction of any heavy frameworks (like Spring, Guava, etc.) is strictly prohibited.
+- **Low-Level Abstraction**: Must use Java NIO's `DirectByteBuffer` for off-heap memory interaction and bridge via `ByteBufferInputStream` to prevent data copying through intermediate `byte[]`.
