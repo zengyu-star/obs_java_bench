@@ -30,7 +30,7 @@ public class MockObsAdapter implements IObsClientAdapter {
     }
 
     @Override
-    public int getObject(String bucketName, String objectKey, String range) {
+    public int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
         simulateNetworkLatency();
         // 如果是 Range 下载，成功码通常是 206
         return simulateStatusCode(range == null ? 200 : 206);

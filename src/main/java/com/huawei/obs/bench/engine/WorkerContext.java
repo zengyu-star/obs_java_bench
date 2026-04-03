@@ -25,14 +25,24 @@ public class WorkerContext {
     // 核心大杀器：预分配的零拷贝直接内存 (Direct Memory)
     // 绝对不在压测循环里 new byte[]
     private ByteBuffer patternBuffer;
+    
+    // 数据校验专用读缓冲，极小的一块直接内存 (例如 64KB)
+    private ByteBuffer receiveBuffer;
 
     public WorkerContext(int threadId, BenchConfig config, UserCredential credential, IObsClientAdapter adapter) {
         this.threadId = threadId;
         this.config = config;
         this.credential = credential;
         this.adapter = adapter;
-        // 使用配置文件中的桶名
-        this.targetBucket = config.bucketName(); 
+        
+        // 【关键逻辑】：动态确定目标桶名
+        if (config.bucketNameFixed() != null && !config.bucketNameFixed().isBlank()) {
+            // 模式 A: 使用全局固定桶名
+            this.targetBucket = config.bucketNameFixed();
+        } else {
+            // 模式 B: 使用租户独立的动态桶名 {ak_lowercase}.{prefix}
+            this.targetBucket = credential.accessKey().toLowerCase() + "." + config.bucketNamePrefix();
+        }
     }
 
     // ================== Getters & Setters ==================
@@ -46,5 +56,33 @@ public class WorkerContext {
     public ByteBuffer getPatternBuffer() { return patternBuffer; }
     public void setPatternBuffer(ByteBuffer patternBuffer) {
         this.patternBuffer = patternBuffer;
+    }
+
+    public ByteBuffer getReceiveBuffer() { return receiveBuffer; }
+    public void setReceiveBuffer(ByteBuffer receiveBuffer) {
+        this.receiveBuffer = receiveBuffer;
+    }
+
+    /**
+     * 高性能预填充伪随机数据 (Zero-GC LCG)
+     * 使用 SplitMix64 算法根据固定种子生成确定性的、无热点的比特流。
+     */
+    public void fillPatternBuffer() {
+        if (patternBuffer == null) {
+            return;
+        }
+        long seed = 0x1234567890ABCDEFL ^ threadId; // 线程私有的固定种子
+        patternBuffer.clear();
+        while (patternBuffer.remaining() >= 8) {
+            seed = com.huawei.obs.bench.utils.HashUtil.splitMix64(seed);
+            patternBuffer.putLong(seed);
+        }
+        // 填剩余零散字节
+        while (patternBuffer.hasRemaining()) {
+            seed = com.huawei.obs.bench.utils.HashUtil.splitMix64(seed);
+            patternBuffer.put((byte) seed);
+        }
+        // 写入完成，切换为读模式供上传或后续对拍
+        patternBuffer.flip();
     }
 }

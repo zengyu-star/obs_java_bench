@@ -5,8 +5,8 @@
 # [1. 基础网络与认证配置]
 # OBS 服务端 Endpoint (不要带 http://)
 Endpoint=obs.ap-southeast-1.myhuaweicloud.com
-# 是否使用 HTTPS (true/false)
-IsSecure=false
+# 通信协议 (https/http)
+Protocol=http
 # 是否使用 STS 临时凭证 (true/false)
 IsTemporaryToken=false
 
@@ -23,19 +23,21 @@ ConnectionTimeoutMs=30000
 UsersCount=1
 # 每个用户开启的线程数
 ThreadsPerUser=1
-# 压测持续时间 (秒)，0代表不限制
+# 压测持续时间 (秒)，为空代表不限时长
 RunSeconds=60
-# 单个线程最大请求数，0代表不限制
-RequestsPerThread=0
+# 单个线程最大请求数
+RequestsPerThread=2
 
 # [4. 测试用例路由]
 # 201:PutObject, 202:GetObject, 204:DeleteObject
 # 216:MultipartUpload, 230:ResumableUpload
-TestCaseCode=204
+TestCaseCode=201
 
 # [5. 对象与数据属性]
-# 压测目标桶名
-BucketName=zengyu-test
+# 固定桶名 (当配置本项时，优先级最高，所有租户共用此桶)
+BucketNameFixed=
+# 动态桶名前缀 (当 BucketNameFixed 为空时生效，桶名格式为: ak.prefix)
+BucketNamePrefix=bench-bucket
 # 对象名前缀
 KeyPrefix=java_bench_test_
 # 单个对象大小 (Bytes)，此处示例为 1MB
@@ -45,7 +47,7 @@ PartSize=5242880
 
 # [6. 高级架构特性]
 # 是否开启一致性 Hash 打散对象名 (防止热点)
-ObjNamePatternHash=true
+ObjNamePatternHash=false
 # 是否开启数据校验 (目前预留)
 EnableDataValidation=false
 # 是否开启流水异步落盘 (detail.csv)

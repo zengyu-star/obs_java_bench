@@ -39,8 +39,8 @@ public class MonitorService {
             this.startTimeMs = System.currentTimeMillis();
             System.out.println("\n[Monitor] 监控线程已启动，等待发令枪...");
             System.out.println("=========================================================================================");
-            System.out.printf("%-10s | %-10s | %-15s | %-12s | %-20s\n", 
-                              "Time(s)", "TPS", "Bandwidth(MB/s)", "Total Succ", "Errors(403/404/5xx/Client)");
+            System.out.printf("%-10s | %-10s | %-15s | %-12s | %-25s\n", 
+                              "Time(s)", "TPS", "Bandwidth(MB/s)", "Total Succ", "Errors(403/404/5xx/Client/Valid)");
             System.out.println("=========================================================================================");
             
             // 延迟 1 秒后开始，每隔 1 秒执行一次快照打印
@@ -61,6 +61,7 @@ public class MonitorService {
         long err404 = stats.fail404Count.sum();
         long err5xx = stats.fail5xxCount.sum();
         long errClient = stats.clientErrorCount.sum();
+        long errValid = stats.dataValidationFailCount.sum();
 
         // 2. 计算与上一秒的差值 (Delta)，这就是瞬时 TPS
         long deltaTps = currentSuccess - lastSuccessCount;
@@ -74,8 +75,8 @@ public class MonitorService {
         elapsedSeconds = elapsedSeconds == 0 ? 1 : elapsedSeconds; // 避免出现 0 秒
 
         // 5. 格式化打印控制台看板
-        String errorMetrics = String.format("%d / %d / %d / %d", err403, err404, err5xx, errClient);
-        System.out.printf("%-10d | %-10d | %-15.2f | %-12d | %-20s\n",
+        String errorMetrics = String.format("%d / %d / %d / %d / %d", err403, err404, err5xx, errClient, errValid);
+        System.out.printf("%-10d | %-10d | %-15.2f | %-12d | %-25s\n",
                 elapsedSeconds, deltaTps, bandwidthMb, currentSuccess, errorMetrics);
 
         // 6. 更新快照游标

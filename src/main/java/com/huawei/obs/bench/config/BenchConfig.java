@@ -10,7 +10,7 @@ public record BenchConfig(
     // 1. 基础网络与认证配置
     // ==========================================
     String endpoint,
-    boolean isSecure,          // true: HTTPS, false: HTTP
+    String protocol,           // http 或 https
     boolean isTemporaryToken,  // 是否使用 STS 临时凭证
 
     // ==========================================
@@ -36,7 +36,8 @@ public record BenchConfig(
     // ==========================================
     // 5. 对象与数据属性
     // ==========================================
-    String bucketName,         // 目标桶名
+    String bucketNameFixed,    // 固定桶名 (优先级最高)
+    String bucketNamePrefix,   // 动态桶名前缀 (ak.prefix)
     String keyPrefix,          // 对象名前缀
     long objectSize,           // 单个对象大小(Bytes)
     long partSize,             // 分段大小(Bytes)
@@ -70,8 +71,10 @@ public record BenchConfig(
         }
 
         // 3. 跳出条件校验
-        if (runSeconds <= 0 && requestsPerThread <= 0) {
-            throw new IllegalArgumentException("RunSeconds 和 RequestsPerThread 不能同时为 0，否则压测将无法自动停止");
+        // 用户要求：RunSeconds 为空（解析为 0）时不限时长。
+        // 但 RequestsPerThread 强制要求 > 0，因此压测将在完成指定请求数后自动停止。
+        if (runSeconds == 0) {
+             System.out.println("[INFO] RunSeconds 为空，压测将进入时长不限模式，直到各线程完成 " + requestsPerThread + " 次请求为止。");
         }
     }
 

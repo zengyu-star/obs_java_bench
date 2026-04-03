@@ -23,9 +23,11 @@ public interface IObsClientAdapter {
      * @param bucketName 目标桶名
      * @param objectKey 对象键名
      * @param range 下载范围 (例如 "bytes=0-1024")，为 null 则执行全量下载
-     * @return HTTP 状态码 (如 200, 206, 404)
+     * @param expectedPattern 用于数据校验的期望比特流 (Pattern Buffer)
+     * @param receiveBuffer 用于消费和对拍的预分配接收缓冲
+     * @return HTTP 状态码 (如 200, 206, 404, 或 600 代表数据损坏)
      */
-    int getObject(String bucketName, String objectKey, String range);
+    int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer);
 
     /**
      * TestCase 204: 删除对象 (DELETE Object)

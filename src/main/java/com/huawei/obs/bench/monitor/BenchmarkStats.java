@@ -20,6 +20,7 @@ public class BenchmarkStats {
     public final LongAdder fail404Count = new LongAdder();
     public final LongAdder fail5xxCount = new LongAdder();
     public final LongAdder clientErrorCount = new LongAdder(); // 本地网络或代码异常
+    public final LongAdder dataValidationFailCount = new LongAdder(); // 数据校验失败次数
     
     public final LongAdder totalBytesTransferred = new LongAdder();
     
@@ -46,6 +47,7 @@ public class BenchmarkStats {
         fail404Count.reset();
         fail5xxCount.reset();
         clientErrorCount.reset();
+        dataValidationFailCount.reset();
         totalBytesTransferred.reset();
         totalLatencyNanos.reset();
         latencyHistogram.reset();

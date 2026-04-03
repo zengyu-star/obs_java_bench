@@ -35,7 +35,7 @@ public class ObsClientManager {
         // 1. 构建高并发压测专用配置
         ObsConfiguration obsConfig = new ObsConfiguration();
         obsConfig.setEndPoint(config.endpoint());
-        obsConfig.setHttpsOnly(config.isSecure());
+        obsConfig.setHttpsOnly("https".equalsIgnoreCase(config.protocol()));
 
         // 【架构师调优】：设置底层 HTTP 连接池最大并发数。
         // 必须确保 MaxConnections >= 总线程数，否则 Worker 线程会因拿不到连接而阻塞。

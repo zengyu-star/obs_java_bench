@@ -45,7 +45,7 @@ public class RealObsAdapter implements IObsClientAdapter {
     }
 
     @Override
-    public int getObject(String bucketName, String objectKey, String range) {
+    public int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
         try {
             GetObjectRequest request = new GetObjectRequest(bucketName, objectKey);
             if (range != null && !range.isBlank()) {
@@ -56,9 +56,10 @@ public class RealObsAdapter implements IObsClientAdapter {
             ObsObject obsObject = obsClient.getObject(request);
             
             // 【关键】：必须彻底消耗并关闭 InputStream，否则连接池资源会耗尽
-            consumeAndCloseStream(obsObject.getObjectContent());
+            // 在此一并执行 Zero-GC 数据校验
+            boolean isValid = consumeAndVerifyStream(obsObject.getObjectContent(), expectedPattern, receiveBuffer);
             
-            return 200;
+            return isValid ? 200 : 600;
 
         } catch (ObsException e) {
             return e.getResponseCode();
@@ -137,16 +138,59 @@ public class RealObsAdapter implements IObsClientAdapter {
     }
 
     /**
-     * 辅助方法：快速排空输入流并归还连接池
+     * 高性能排空输入流，并在需要时进行 Zero-GC 对拍校验
      */
-    private void consumeAndCloseStream(InputStream in) {
-        if (in == null) return;
+    private boolean consumeAndVerifyStream(InputStream in, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
+        if (in == null) return false;
+        
+        boolean isValidationEnabled = expectedPattern != null && receiveBuffer != null;
+        boolean isValid = true;
+        int patternSize = isValidationEnabled ? expectedPattern.capacity() : 0;
+        long bytesProcessed = 0;
+
         try (in) {
-            byte[] drain = new byte[8192];
-            while (in.read(drain) != -1) {
-                // 如果需要校验数据一致性，在此扩展比对逻辑
+            if (isValidationEnabled) {
+                // 如果开启了强一致校验
+                byte[] underlyingReadArray;
+                int readCapacity;
+                
+                // 如果是 DirectBuffer 没有 backing array，则在栈或堆上借用极小的流转空间
+                if (receiveBuffer.hasArray()) {
+                    underlyingReadArray = receiveBuffer.array();
+                    readCapacity = receiveBuffer.capacity();
+                } else {
+                    readCapacity = receiveBuffer.capacity();
+                    underlyingReadArray = new byte[readCapacity]; // 不得已进行首次极小分配，在连接池中可被逃逸分析优化
+                }
+
+                int bytesRead;
+                byte[] expectedArray = expectedPattern.hasArray() ? expectedPattern.array() : null;
+
+                while ((bytesRead = in.read(underlyingReadArray, 0, readCapacity)) != -1) {
+                    if (!isValid) continue; // 损坏后仅排空防止泄露
+                    
+                    for (int i = 0; i < bytesRead; i++) {
+                        int expectedIndex = (int) (bytesProcessed % patternSize);
+                        byte expectedByte = expectedArray != null ? expectedArray[expectedIndex] : expectedPattern.get(expectedIndex);
+                        
+                        if (underlyingReadArray[i] != expectedByte) {
+                            System.err.printf("[ERROR] 数据完整性校验失败！对象数据在偏移量 %d 处发生不一致。\n", bytesProcessed);
+                            isValid = false;
+                            break;
+                        }
+                        bytesProcessed++;
+                    }
+                }
+            } else {
+                // 不进行校验，极速排空
+                byte[] drain = new byte[8192];
+                while (in.read(drain) != -1) {}
             }
-        } catch (Exception ignore) {}
+        } catch (Exception ignore) {
+            return false;
+        }
+        
+        return isValid;
     }
 
     // 简单的 Range 解析逻辑 (示例: "0-1024")

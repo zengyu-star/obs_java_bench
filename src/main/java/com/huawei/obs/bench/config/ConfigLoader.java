@@ -31,7 +31,7 @@ public class ConfigLoader {
         try {
             return new BenchConfig(
                 props.getProperty("Endpoint", "obs.cn-north-4.myhuaweicloud.com").trim(),
-                Boolean.parseBoolean(props.getProperty("IsSecure", "false")),
+                props.getProperty("Protocol", "https").trim(),
                 Boolean.parseBoolean(props.getProperty("IsTemporaryToken", "false")),
 
                 Integer.parseInt(props.getProperty("MaxConnections", "2000")),
@@ -40,12 +40,13 @@ public class ConfigLoader {
 
                 Integer.parseInt(props.getProperty("UsersCount", "1")),
                 Integer.parseInt(props.getProperty("ThreadsPerUser", "1")),
-                Long.parseLong(props.getProperty("RunSeconds", "0")),
-                Long.parseLong(props.getProperty("RequestsPerThread", "0")),
+                parseRunSeconds(props.getProperty("RunSeconds")),
+                parseRequestsPerThread(props.getProperty("RequestsPerThread")),
 
                 Integer.parseInt(props.getProperty("TestCaseCode", "201")),
 
-                props.getProperty("BucketName", "bench-bucket").trim(),
+                props.getProperty("BucketNameFixed", "").trim(),
+                props.getProperty("BucketNamePrefix", "bench-bucket").trim(),
                 props.getProperty("KeyPrefix", "bench_test_").trim(),
                 Long.parseLong(props.getProperty("ObjectSize", "1048576")),
                 Long.parseLong(props.getProperty("PartSize", "5242880")),
@@ -113,5 +114,41 @@ public class ConfigLoader {
         }
 
         return users;
+    }
+
+    /**
+     * 解析 RunSeconds 参数：大于0的整数或为空(返回0)
+     */
+    private static long parseRunSeconds(String rawValue) {
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            return 0; // 空表示不限时长
+        }
+        try {
+            long value = Long.parseLong(rawValue.trim());
+            if (value <= 0) {
+                throw new IllegalArgumentException("[致命错误] RunSeconds 必须为空，或者大于 0 的整数值，不允许配置为 0（当前输入: \"" + rawValue + "\"）");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("[致命错误] RunSeconds 格式非法，必须为空，或者大于 0 的整数值（当前输入: \"" + rawValue + "\"）");
+        }
+    }
+
+    /**
+     * 解析 RequestsPerThread 参数：必须是大于0的整数
+     */
+    private static long parseRequestsPerThread(String rawValue) {
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            throw new IllegalArgumentException("[致命错误] RequestsPerThread 不能为空，必须配置为大于 0 的整数");
+        }
+        try {
+            long value = Long.parseLong(rawValue.trim());
+            if (value <= 0) {
+                throw new IllegalArgumentException("[致命错误] RequestsPerThread 必须是大于 0 的整数（当前值: " + value + "）");
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("[致命错误] RequestsPerThread 格式非法，必须是大于 0 的整数（当前输入: \"" + rawValue + "\"）");
+        }
     }
 }

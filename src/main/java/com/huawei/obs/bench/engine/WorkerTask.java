@@ -43,10 +43,19 @@ public class WorkerTask implements Runnable {
             BenchConfig config = context.getConfig();
             
             // 【架构师优化2】：提前在系统内核态分配好 DirectBuffer，不计入压测耗时
-            if (config.objectSize() > 0 && isUploadTask(config.testCaseCode())) {
-                ByteBuffer buffer = ByteBuffer.allocateDirect((int) config.objectSize());
-                // TODO: 若 EnableDataValidation=true，在这里使用 LCG 算法填满 buffer
-                context.setPatternBuffer(buffer);
+            if (config.objectSize() > 0) {
+                if (isUploadTask(config.testCaseCode()) || (config.testCaseCode() == 202 && config.enableDataValidation())) {
+                    ByteBuffer buffer = ByteBuffer.allocateDirect((int) config.objectSize());
+                    context.setPatternBuffer(buffer);
+                    if (config.enableDataValidation()) {
+                        context.fillPatternBuffer();
+                    }
+                }
+            }
+
+            if (config.testCaseCode() == 202 && config.enableDataValidation()) {
+                // 下载对拍专用缓冲，64KB 足够流转
+                context.setReceiveBuffer(ByteBuffer.allocateDirect(64 * 1024));
             }
 
             // 汇报：本线程军火已装填完毕！
@@ -75,8 +84,8 @@ public class WorkerTask implements Runnable {
                     break;
                 }
 
-                // 2. 零分配生成一致性 Hash 对象名
-                HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getThreadId(), seq, config.objNamePatternHash());
+                // 2. 零分配生成对象名
+                HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getCredential().username(), context.getThreadId(), seq, config.objNamePatternHash());
                 String objectKey = keyBuilder.toString(); // 这是整个循环中唯一不可避免的微小对象创建
 
                 // 3. 重置 DirectBuffer 游标 (Zero-Copy 核心)
@@ -86,7 +95,7 @@ public class WorkerTask implements Runnable {
 
                 // 4. 发起请求并利用纳秒进行高精度计时
                 long reqStartNanos = System.nanoTime();
-                int statusCode = executeOperation(adapter, testCase, targetBucket, objectKey, payloadBuffer);
+                int statusCode = executeOperation(adapter, testCase, targetBucket, objectKey, payloadBuffer, context.getReceiveBuffer());
                 long latencyNanos = System.nanoTime() - reqStartNanos;
 
                 // 5. 无锁累加统计数据
@@ -110,10 +119,10 @@ public class WorkerTask implements Runnable {
     /**
      * 业务路由：根据 TestCase 映射到具体接口
      */
-    private int executeOperation(IObsClientAdapter adapter, int testCaseCode, String bucket, String key, ByteBuffer payload) {
+    private int executeOperation(IObsClientAdapter adapter, int testCaseCode, String bucket, String key, ByteBuffer payload, ByteBuffer receiveBuffer) {
         return switch (testCaseCode) {
             case 201 -> adapter.putObject(bucket, key, payload);
-            case 202 -> adapter.getObject(bucket, key, null);
+            case 202 -> adapter.getObject(bucket, key, null, payload, receiveBuffer);
             case 204 -> adapter.deleteObject(bucket, key);
             // 这里未来可以扩充 216(Multipart) 和 230(Resumable)
             default -> throw new IllegalArgumentException("未知的 TestCaseCode: " + testCaseCode);
@@ -135,8 +144,10 @@ public class WorkerTask implements Runnable {
             globalStats.fail403Count.increment();
         } else if (statusCode == 404) {
             globalStats.fail404Count.increment();
-        } else if (statusCode >= 500) {
+        } else if (statusCode >= 500 && statusCode < 600) {
             globalStats.fail5xxCount.increment();
+        } else if (statusCode == 600) {
+            globalStats.dataValidationFailCount.increment();
         } else {
             // 包含了返回 0 的本地客户端异常
             globalStats.clientErrorCount.increment();
