@@ -51,7 +51,7 @@ public class WorkerTask implements Runnable {
             BenchConfig config = context.getConfig();
             
             // [Architect's note]: Ensure pattern buffer is allocated if any involved operation is an upload (PUT/Multipart/Resumable)
-            if (config.objectSize() > 0) {
+            if (config.objectSizeMax() > 0) {
                 boolean needsUploadBuffer = false;
                 if (config.testCaseCode() == 900 && config.mixOperations() != null) {
                     for (int op : config.mixOperations()) {
@@ -65,7 +65,7 @@ public class WorkerTask implements Runnable {
                 }
                 
                 if (needsUploadBuffer || (config.testCaseCode() == 202 && config.enableDataValidation())) {
-                    ByteBuffer buffer = ByteBuffer.allocateDirect((int) config.objectSize());
+                    ByteBuffer buffer = ByteBuffer.allocateDirect((int) config.objectSizeMax());
                     context.setPatternBuffer(buffer);
                     if (config.enableDataValidation()) {
                         context.fillPatternBuffer();
@@ -147,8 +147,15 @@ public class WorkerTask implements Runnable {
                 HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getCredential().username(), context.getThreadId(), objectSeqId, config.objNamePatternHash());
                 String objectKey = keyBuilder.toString();
 
-                // 4. Reset DirectBuffer cursor
-                if (payloadBuffer != null) {
+                // 4. Determine Dynamic Object Size & Set Buffer Limit
+                long currentSize = config.objectSizeMin();
+                if (payloadBuffer != null && isUploadTask(currentTestCase)) {
+                    payloadBuffer.rewind();
+                    if (config.objectSizeMax() > config.objectSizeMin()) {
+                        currentSize = java.util.concurrent.ThreadLocalRandom.current().nextLong(config.objectSizeMin(), config.objectSizeMax() + 1);
+                    }
+                    payloadBuffer.limit((int) currentSize);
+                } else if (payloadBuffer != null) {
                     payloadBuffer.rewind();
                 }
 
@@ -158,7 +165,7 @@ public class WorkerTask implements Runnable {
                 long latencyNanos = System.nanoTime() - reqStartNanos;
 
                 // 6. Thread-safe stats update
-                updateStats(statusCode, latencyNanos, config.objectSize());
+                updateStats(statusCode, latencyNanos, adapter.getLastRequestBytes());
 
                 // 7. Record detail log if enabled (Zero-GC style)
                 if (detailWriter != null) {

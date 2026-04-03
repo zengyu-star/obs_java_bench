@@ -41,13 +41,17 @@ public class ConfigLoader {
             int threadsPerUser = Integer.parseInt(props.getProperty("ThreadsPerUser", "1"));
             long runSeconds = parseRunSeconds(props.getProperty("RunSeconds"));
             long requestsPerThread = parseRequestsPerThread(props.getProperty("RequestsPerThread"));
+            String logLevel = props.getProperty("LogLevel", "INFO").trim().toUpperCase();
 
             int testCaseCode = Integer.parseInt(props.getProperty("TestCaseCode", "201"));
 
             String bucketNameFixed = props.getProperty("BucketNameFixed", "").trim();
             String bucketNamePrefix = props.getProperty("BucketNamePrefix", "bench-bucket").trim();
             String keyPrefix = props.getProperty("KeyPrefix", "bench_test_").trim();
-            long objectSize = Long.parseLong(props.getProperty("ObjectSize", "1048576"));
+            String uploadFilePath = props.getProperty("UploadFilePath", "").trim();
+            long[] parsedObjectSize = parseObjectSize(props.getProperty("ObjectSize", "1048576"));
+            long objectSizeMin = parsedObjectSize[0];
+            long objectSizeMax = parsedObjectSize[1];
             long partSize = Long.parseLong(props.getProperty("PartSize", "5242880"));
 
             boolean objNamePatternHash = Boolean.parseBoolean(props.getProperty("ObjNamePatternHash", "true"));
@@ -60,16 +64,39 @@ public class ConfigLoader {
             long mixLoopCount = parseLongOrDefault(props.getProperty("MixLoopCount", ""), 0);
 
             return new BenchConfig(
-                endpoint, protocol, isTemporaryToken,
+                endpoint, protocol, isTemporaryToken, logLevel,
                 maxConnections, socketTimeoutMs, connectionTimeoutMs,
                 usersCount, threadsPerUser, runSeconds, requestsPerThread,
                 testCaseCode,
-                bucketNameFixed, bucketNamePrefix, keyPrefix, objectSize, partSize,
+                bucketNameFixed, bucketNamePrefix, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
                 objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
                 mixOperations, mixLoopCount
             );
         } catch (NumberFormatException e) {
             throw new RuntimeException("[Fatal] Invalid number format in config.dat, please check values!", e);
+        }
+    }
+
+    private static long[] parseObjectSize(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return new long[]{1048576L, 1048576L};
+        }
+        raw = raw.trim();
+        try {
+            if (raw.contains("~")) {
+                String[] parts = raw.split("~");
+                long min = Long.parseLong(parts[0].trim());
+                long max = Long.parseLong(parts[1].trim());
+                if (min > max) {
+                    throw new IllegalArgumentException("ObjectSize min value cannot be greater than max value.");
+                }
+                return new long[]{min, max};
+            } else {
+                long size = Long.parseLong(raw);
+                return new long[]{size, size};
+            }
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid ObjectSize format. Supported formats: '1024' or '0~4096'.");
         }
     }
 

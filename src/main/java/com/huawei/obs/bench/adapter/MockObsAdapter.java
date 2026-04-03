@@ -12,6 +12,8 @@ public class MockObsAdapter implements IObsClientAdapter {
 
     private final long avgLatencyMs;
     private final int errorRateTenThousandths;
+    
+    private final ThreadLocal<Long> lastRequestBytes = ThreadLocal.withInitial(() -> 0L);
 
     /**
      * Construct Mock Adapter
@@ -26,12 +28,14 @@ public class MockObsAdapter implements IObsClientAdapter {
     @Override
     public int putObject(String bucketName, String objectKey, ByteBuffer payload) {
         simulateNetworkLatency();
+        lastRequestBytes.set(payload != null ? (long) payload.limit() : 0L);
         return simulateStatusCode(200);
     }
 
     @Override
     public int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
         simulateNetworkLatency();
+        lastRequestBytes.set(receiveBuffer != null ? (long) receiveBuffer.capacity() : 0L);
         // For Range downloads, success code is usually 206
         return simulateStatusCode(range == null ? 200 : 206);
     }
@@ -39,6 +43,7 @@ public class MockObsAdapter implements IObsClientAdapter {
     @Override
     public int deleteObject(String bucketName, String objectKey) {
         simulateNetworkLatency();
+        lastRequestBytes.set(0L);
         return simulateStatusCode(204); // Success for Delete usually returns 204 No Content
     }
 
@@ -48,12 +53,14 @@ public class MockObsAdapter implements IObsClientAdapter {
         for (int i = 0; i < partCount; i++) {
             simulateNetworkLatency();
         }
+        lastRequestBytes.set((long) partCount * partSize);
         return simulateStatusCode(200);
     }
 
     @Override
     public int resumableUpload(String bucketName, String objectKey, String filePath, int taskNum, long partSize, boolean enableCheckpoint) {
         simulateNetworkLatency();
+        lastRequestBytes.set(0L); // Mock implementation doesn't accurately know file size
         return simulateStatusCode(200);
     }
 
@@ -96,5 +103,10 @@ public class MockObsAdapter implements IObsClientAdapter {
     @Override
     public String getLastRequestId() {
         return "MOCK_REQ_" + ThreadLocalRandom.current().nextInt(1000000);
+    }
+
+    @Override
+    public long getLastRequestBytes() {
+        return lastRequestBytes.get();
     }
 }

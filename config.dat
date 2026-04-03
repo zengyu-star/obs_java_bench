@@ -8,7 +8,9 @@ Endpoint=obs.ap-southeast-1.myhuaweicloud.com
 # Protocol (https/http)
 Protocol=http
 # Whether to use STS temporary credentials (true/false)
-IsTemporaryToken=false
+IsTemporaryToken=true
+# Tool Log Level (DEBUG, INFO, WARN, ERROR)
+LogLevel=INFO
 
 # [2. Low-level Java Connection Pool Tuning]
 # Max concurrent connections (Arch suggestion: >= UsersCount * ThreadsPerUser)
@@ -22,11 +24,11 @@ ConnectionTimeoutMs=30000
 # Number of concurrent users (corresponds to rows in users.dat)
 UsersCount=1
 # Threads opened per user
-ThreadsPerUser=10
+ThreadsPerUser=1
 # Benchmark duration (seconds), empty means unlimited
 RunSeconds=60
 # Max requests per thread
-RequestsPerThread=200
+RequestsPerThread=2
 # [4. Test Case Routing]
 # TestCase choices: 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
 TestCaseCode=201
@@ -44,7 +46,10 @@ BucketNameFixed=zengyu-test
 BucketNamePrefix=
 # Object Key Prefix
 KeyPrefix=java_bench_test_
-# Single object size in Bytes (e.g., 1048576 for 1MB)
+# [Upload File Path]
+# Path to local file intended for Multipart (216) or Resumable (230) Test Cases
+UploadFilePath=
+# Single object size in Bytes (e.g., 1048576 or 0~4096 for a dynamic range)
 ObjectSize=1048576
 # Part size for multipart uploads in Bytes (e.g., 5242880 for 5MB)
 PartSize=5242880

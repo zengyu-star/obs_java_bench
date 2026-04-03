@@ -153,7 +153,11 @@ public class MonitorService {
             printAndFile(briefWriter, String.format("  Reqs/Thread:       %d", config.requestsPerThread()));
             
             printAndFile(briefWriter, "[ObjectSettings]");
-            printAndFile(briefWriter, String.format("  ObjectSize:        %d bytes", config.objectSize()));
+            if (config.objectSizeMin() == config.objectSizeMax()) {
+                printAndFile(briefWriter, String.format("  ObjectSize:        %d bytes", config.objectSizeMax()));
+            } else {
+                printAndFile(briefWriter, String.format("  ObjectSize:        %d ~ %d bytes (Dynamic)", config.objectSizeMin(), config.objectSizeMax()));
+            }
             printAndFile(briefWriter, String.format("  PartSize:          %d bytes", config.partSize()));
             printAndFile(briefWriter, String.format("  KeyPrefix:         %s", config.keyPrefix()));
             printAndFile(briefWriter, String.format("  KeyHashPrefix:     %s", config.objNamePatternHash()));

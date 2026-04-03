@@ -66,4 +66,10 @@ public interface IObsClientAdapter {
      * Fetches the latest OBS RequestId (for detailed log tracing)
      */
     String getLastRequestId();
+
+    /**
+     * Fetches the number of bytes transferred in the last operation
+     * @return Number of bytes successfully uploaded or downloaded in the last request
+     */
+    long getLastRequestBytes();
 }

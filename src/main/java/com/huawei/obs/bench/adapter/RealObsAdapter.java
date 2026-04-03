@@ -16,9 +16,15 @@ public class RealObsAdapter implements IObsClientAdapter {
 
     private final ObsClient obsClient;
     private String lastRequestId = ""; // [New]: Track last request ID for detail logging
+    private final ThreadLocal<Long> lastRequestBytes = ThreadLocal.withInitial(() -> 0L);
 
     public RealObsAdapter(ObsClient obsClient) {
         this.obsClient = obsClient;
+    }
+
+    @Override
+    public long getLastRequestBytes() {
+        return lastRequestBytes.get();
     }
 
     @Override
@@ -40,6 +46,7 @@ public class RealObsAdapter implements IObsClientAdapter {
 
             PutObjectResult result = obsClient.putObject(request);
             this.lastRequestId = result.getRequestId();
+            lastRequestBytes.set(payload != null ? (long) payload.limit() : 0L);
             return result.getStatusCode();
 
         } catch (ObsException e) {
@@ -61,13 +68,23 @@ public class RealObsAdapter implements IObsClientAdapter {
             }
 
             ObsObject obsObject = obsClient.getObject(request);
+            long contentLength = obsObject.getMetadata() != null ? obsObject.getMetadata().getContentLength() : 0;
             this.lastRequestId = (obsObject.getMetadata() != null) ? obsObject.getMetadata().getRequestId() : "UNKNOWN";
             
             // [Critical]: InputStream must be fully consumed and closed to prevent connection pool exhaustion.
             // Also performs Zero-GC data validation here.
-            boolean isValid = consumeAndVerifyStream(obsObject.getObjectContent(), expectedPattern, receiveBuffer);
+            boolean[] isValidResult = new boolean[]{true};
+            long bytesRead = consumeAndVerifyStream(obsObject.getObjectContent(), expectedPattern, receiveBuffer, isValidResult);
             
-            return isValid ? 200 : 600;
+            // Explicitly validate length if we expect validation
+            if (isValidResult[0] && expectedPattern != null && contentLength > 0 && bytesRead != contentLength) {
+                System.err.printf("[ERROR] Data length validation failed! Expected %d but got %d.\n", contentLength, bytesRead);
+                isValidResult[0] = false;
+            }
+            
+            lastRequestBytes.set(isValidResult[0] ? bytesRead : 0L);
+            
+            return isValidResult[0] ? 200 : 600;
 
         } catch (ObsException e) {
             this.lastRequestId = e.getErrorRequestId();
@@ -83,6 +100,7 @@ public class RealObsAdapter implements IObsClientAdapter {
         try {
             DeleteObjectResult result = obsClient.deleteObject(bucketName, objectKey);
             this.lastRequestId = result.getRequestId();
+            lastRequestBytes.set(0L);
             return result.getStatusCode();
         } catch (ObsException e) {
             this.lastRequestId = e.getErrorRequestId();
@@ -122,6 +140,7 @@ public class RealObsAdapter implements IObsClientAdapter {
             // 3. Complete multipart upload
             CompleteMultipartUploadRequest completeRequest = new CompleteMultipartUploadRequest(bucketName, objectKey, uploadId, etags);
             CompleteMultipartUploadResult result = obsClient.completeMultipartUpload(completeRequest);
+            lastRequestBytes.set((long) partCount * partSize);
             return result.getStatusCode();
 
         } catch (ObsException e) {
@@ -142,6 +161,7 @@ public class RealObsAdapter implements IObsClientAdapter {
             request.setEnableCheckpoint(enableCheckpoint);
 
             CompleteMultipartUploadResult result = obsClient.uploadFile(request);
+            lastRequestBytes.set(0L);
             return result.getStatusCode();
         } catch (ObsException e) {
             return e.getResponseCode();
@@ -152,9 +172,13 @@ public class RealObsAdapter implements IObsClientAdapter {
 
     /**
      * High-performance stream consumption with optional Zero-GC pattern verification
+     * @return Number of bytes processed
      */
-    private boolean consumeAndVerifyStream(InputStream in, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
-        if (in == null) return false;
+    private long consumeAndVerifyStream(InputStream in, ByteBuffer expectedPattern, ByteBuffer receiveBuffer, boolean[] outIsValid) {
+        if (in == null) {
+            outIsValid[0] = false;
+            return 0;
+        }
         
         boolean isValidationEnabled = expectedPattern != null && receiveBuffer != null;
         boolean isValid = true;
@@ -197,13 +221,18 @@ public class RealObsAdapter implements IObsClientAdapter {
             } else {
                 // Drain as fast as possible without validation
                 byte[] drain = new byte[8192];
-                while (in.read(drain) != -1) {}
+                int bytesRead;
+                while ((bytesRead = in.read(drain)) != -1) {
+                    bytesProcessed += bytesRead;
+                }
             }
         } catch (Exception ignore) {
-            return false;
+            outIsValid[0] = false;
+            return bytesProcessed;
         }
         
-        return isValid;
+        outIsValid[0] = isValid;
+        return bytesProcessed;
     }
 
     // Simple Range parsing logic (Example: "0-1024")

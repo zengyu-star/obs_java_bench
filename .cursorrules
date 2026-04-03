@@ -23,3 +23,6 @@ This project is a high-performance benchmarking engine. All future development, 
 
 ## 5. Version Control & Operational Safety
 - **No Unprompted Git Commits**: DO NOT automatically execute `git commit` or `git push` to GitHub unless the user explicitly and proactively requests it.
+
+## 6. Logic & Validation Consistency
+- **Constructor Validation Preferred**: Place critical parameter validation inside the `BenchConfig` record constructor rather than just in the loader. This ensures constraints are enforced regardless of whether the configuration is initialized from a file or overridden via CLI.

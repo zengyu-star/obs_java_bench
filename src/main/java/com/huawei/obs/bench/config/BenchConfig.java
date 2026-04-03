@@ -12,6 +12,7 @@ public record BenchConfig(
     String endpoint,
     String protocol,           // http or https
     boolean isTemporaryToken,  // Whether to use STS temporary credentials
+    String logLevel,           // Tool log level (DEBUG, INFO, WARN, ERROR)
 
     // ==========================================
     // 2. Low-level Java Connection Pool Tuning
@@ -39,7 +40,9 @@ public record BenchConfig(
     String bucketNameFixed,    // Fixed bucket name (highest priority)
     String bucketNamePrefix,   // Dynamic bucket prefix (ak.prefix)
     String keyPrefix,          // Object name prefix
-    long objectSize,           // Single object size (Bytes)
+    String uploadFilePath,     // Local file path used for Resumable/Multipart upload testing
+    long objectSizeMin,        // Minimum object size (Bytes)
+    long objectSizeMax,        // Maximum object size (Bytes)
     long partSize,             // Part size (Bytes)
 
     // ==========================================
@@ -76,7 +79,12 @@ public record BenchConfig(
                     "This may cause significant blocking. Please increase MaxConnections!\n", maxConnections, totalThreads);
         }
 
-        // 3. Exit Condition Validation
+        // 3. Mixed Mode Validation
+        if (testCaseCode == 900 && mixLoopCount <= 0) {
+            throw new IllegalArgumentException("MixLoopCount must be a positive integer (> 0) when TestCaseCode is 900");
+        }
+
+        // 4. Exit Condition Validation
         if (runSeconds == 0) {
              System.out.println("[INFO] RunSeconds is empty. Benchmark will run until each thread completes " + requestsPerThread + " requests.");
         }
@@ -94,11 +102,11 @@ public record BenchConfig(
      */
     public BenchConfig withTestCaseCode(int code) {
         return new BenchConfig(
-            endpoint, protocol, isTemporaryToken,
+            endpoint, protocol, isTemporaryToken, logLevel,
             maxConnections, socketTimeoutMs, connectionTimeoutMs,
             usersCount, threadsPerUser, runSeconds, requestsPerThread,
             code, // The override
-            bucketNameFixed, bucketNamePrefix, keyPrefix, objectSize, partSize,
+            bucketNameFixed, bucketNamePrefix, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
             objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
             mixOperations, mixLoopCount
         );
