@@ -1,3 +1,6 @@
 target/
-conf/users.dat
 logs/
+users.dat*
+temptoken.dat
+createBucketDemo.java
+.agents/

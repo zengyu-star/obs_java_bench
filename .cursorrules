@@ -23,6 +23,7 @@ This project is a high-performance benchmarking engine. All future development, 
 
 ## 5. Version Control & Operational Safety
 - **No Unprompted Git Commits**: DO NOT automatically execute `git commit` or `git push` to GitHub unless the user explicitly and proactively requests it.
+- **NO Sensitive Data**: Strictly PROHIBIT `git add`, `git commit`, or `git push` of any files containing credentials (AK/SK), such as `users.dat`, `temptoken.dat`, or temporary credential scripts. These must be kept in `.gitignore`.
 
 ## 6. Logic & Validation Consistency
 - **Constructor Validation Preferred**: Place critical parameter validation inside the `BenchConfig` record constructor rather than just in the loader. This ensures constraints are enforced regardless of whether the configuration is initialized from a file or overridden via CLI.
