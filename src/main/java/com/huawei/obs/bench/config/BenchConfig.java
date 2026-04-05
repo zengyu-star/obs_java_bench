@@ -65,7 +65,8 @@ public record BenchConfig(
     // ==========================================
     // 8. Controlled Multipart Actions
     // ==========================================
-    int partsForEachUploadID      // [New]: Number of parts per multipart upload
+    int partsForEachUploadID,     // [New]: Number of parts per multipart upload
+    Integer resumableThreads      // [New]: Internal concurrency for Resumable Upload (TestCase 230)
 ) {
     /**
      * Compact Constructor
@@ -110,9 +111,6 @@ public record BenchConfig(
         return usersCount * threadsPerUser;
     }
 
-    /**
-     * Create a new BenchConfig with a modified testCaseCode (CLI override)
-     */
     public BenchConfig withTestCaseCode(int code) {
         return new BenchConfig(
             endpoint, protocol, isTemporaryToken, logLevel, bucketLocation,
@@ -121,7 +119,20 @@ public record BenchConfig(
             code, // The override
             bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
             objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
-            mixOperations, mixLoopCount, partsForEachUploadID
+            mixOperations, mixLoopCount, partsForEachUploadID, resumableThreads
+        );
+    }
+
+    public BenchConfig withUploadFilePath(String newPath) {
+        return new BenchConfig(
+            endpoint, protocol, isTemporaryToken, logLevel, bucketLocation,
+            maxConnections, socketTimeoutMs, connectionTimeoutMs,
+            usersCount, threadsPerUser, runSeconds, requestsPerThread,
+            testCaseCode,
+            bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, newPath, // The override
+            objectSizeMin, objectSizeMax, partSize,
+            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
+            mixOperations, mixLoopCount, partsForEachUploadID, resumableThreads
         );
     }
 }

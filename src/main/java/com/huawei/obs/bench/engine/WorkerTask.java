@@ -227,7 +227,10 @@ public class WorkerTask implements Runnable {
             case 202 -> adapter.getObject(bucket, key, null, payload, receiveBuffer);
             case 204 -> adapter.deleteObject(bucket, key);
             case 216 -> adapter.multipartUpload(bucket, key, payload, config.partsForEachUploadID(), config.partSize());
-            case 230 -> adapter.resumableUpload(bucket, key, config.uploadFilePath(), Runtime.getRuntime().availableProcessors(), config.partSize(), config.enableCheckpoint());
+            case 230 -> {
+                int internalThreads = config.resumableThreads() != null ? config.resumableThreads() : Runtime.getRuntime().availableProcessors();
+                yield adapter.resumableUpload(bucket, key, config.uploadFilePath(), internalThreads, config.partSize(), config.enableCheckpoint());
+            }
             default -> throw new IllegalArgumentException("Unknown TestCaseCode: " + testCaseCode);
         };
     }

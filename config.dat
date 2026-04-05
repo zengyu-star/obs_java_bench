@@ -30,7 +30,7 @@ RunSeconds=60
 # Max requests per thread
 RequestsPerThread=1
 # TestCase choices: 101=CREATE_BUCKET, 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
-TestCaseCode=216
+TestCaseCode=230
 
 # Mixed Workload Configuration (Active only if TestCaseCode=900)
 # MixOperation: List of operations involved in the mix, comma-separated
@@ -58,13 +58,15 @@ ObjectSize=1048576
 # Part size for multipart uploads in Bytes (e.g., 5242880 for 5MB)
 PartSize=5242880
 # Number of parts per UploadID (Only for TestCase 216)
-PartsForEachUploadID=3
+PartsForEachUploadID=100
+# Internal concurrency for Resumable Upload (Only for TestCase 230). Empty means CPU core count.
+ResumableThreads=3
 
 # [6. Advanced Architectural Features]
 # Whether to enable hash prefixes in object names (prevents hotspots)
 ObjNamePatternHash=false
 # Whether to enable Zero-GC data validation
-EnableDataValidation=false
+EnableDataValidation=true
 # Whether to enable asynchronous detail logging (detail.csv)
 EnableDetailLog=true
 # Whether to enable resumable checkpoints (Only for TestCase 230)

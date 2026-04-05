@@ -8,8 +8,10 @@ import com.huawei.obs.bench.engine.ExecutionScheduler;
 import com.huawei.obs.bench.monitor.BenchmarkStats;
 import com.huawei.obs.bench.monitor.MonitorService;
 
+import com.huawei.obs.bench.utils.DataGenerator;
 import com.huawei.obs.bench.utils.LogUtil;
 import java.io.File;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -38,7 +40,23 @@ public class Bootstrap {
         String usersPath = "users.dat";
         Integer testCaseCodeOverride = null;
 
-        for (String arg : args) {
+        for (int i = 0; i < args.length; i++) {
+            String arg = args[i];
+            if (arg.equalsIgnoreCase("gen") || arg.equalsIgnoreCase("generate")) {
+                int sizeMb = 100;
+                if (i + 1 < args.length && args[i + 1].matches("\\d+(MB|mb)?")) {
+                    String sizeStr = args[i + 1].replaceAll("(?i)mb", "");
+                    sizeMb = Integer.parseInt(sizeStr);
+                }
+                try {
+                    DataGenerator.generateTestFile("test_data.bin", sizeMb);
+                    System.out.printf("[SUCCESS] Validation-compatible test_data.bin (%dMB) generated.\n", sizeMb);
+                    System.exit(0);
+                } catch (IOException e) {
+                    System.err.println("[ERROR] Failed to generate test file: " + e.getMessage());
+                    System.exit(1);
+                }
+            }
             if (arg.matches("\\d{3}")) {
                 testCaseCodeOverride = Integer.parseInt(arg);
             } else if (arg.endsWith(".dat") || !arg.contains(".")) {
@@ -67,6 +85,22 @@ public class Bootstrap {
             if (testCaseCodeOverride != null) {
                 LogUtil.info("MAIN", "CLI Override detected! Using TestCaseCode: " + testCaseCodeOverride);
                 config = config.withTestCaseCode(testCaseCodeOverride);
+            }
+
+            // [Validation]: ResumableThreads checks
+            int cpuCores = Runtime.getRuntime().availableProcessors();
+            if (config.resumableThreads() != null) {
+                if (config.resumableThreads() < 0) {
+                    throw new IllegalArgumentException("[Fatal] ResumableThreads format error! It must be empty or a positive integer.");
+                }
+                if (config.resumableThreads() > cpuCores) {
+                    throw new IllegalArgumentException(String.format(
+                        "[Fatal] ResumableThreads (%d) exceeds the number of CPU cores (%d). Please reduce the value!",
+                        config.resumableThreads(), cpuCores));
+                }
+                LogUtil.config("Resumable Internal Threads: " + config.resumableThreads());
+            } else {
+                LogUtil.config("Resumable Internal Threads: " + cpuCores + " (Auto-detected)");
             }
 
             // C-style Config Summary
@@ -108,6 +142,27 @@ public class Bootstrap {
             LogUtil.info("MAIN", "Initializing connection pool...");
             ObsClientManager clientManager = ObsClientManager.getInstance();
             clientManager.initClients(config, users);
+
+            // [TestCase 230 Enhancement]: Automatic Test Data Generation & Checkpoint Setup
+            if (config.testCaseCode() == 230 || config.testCaseCode() == 216) {
+                File cpDir = new File("upload_checkpoint");
+                if (!cpDir.exists()) cpDir.mkdirs();
+                
+                if (config.testCaseCode() == 230) {
+                    String uploadPath = config.uploadFilePath();
+                    if (uploadPath == null || uploadPath.isEmpty()) {
+                        uploadPath = "test_data.bin";
+                        // Re-fetch config with default path if empty
+                        config = ConfigLoader.loadConfig(configPath).withUploadFilePath(uploadPath);
+                    }
+                    
+                    File uploadFile = new File(uploadPath);
+                    if (!uploadFile.exists()) {
+                        LogUtil.warn("MAIN", "UploadFilePath not found. Triggering auto-generation...");
+                        DataGenerator.generateTestFile(uploadPath, 100); // Default 100MB
+                    }
+                }
+            }
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 LogUtil.warn("MAIN", "Exit signal received. Releasing resources...");

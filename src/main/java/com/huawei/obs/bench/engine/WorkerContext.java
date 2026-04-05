@@ -81,7 +81,7 @@ public class WorkerContext {
         if (patternBuffer == null) {
             return;
         }
-        long seed = 0x1234567890ABCDEFL ^ threadId; // Fixed seed per thread
+        long seed = 0x1234567890ABCDEFL; // Standardized fixed seed for data validation consistency
         patternBuffer.clear();
         while (patternBuffer.remaining() >= 8) {
             seed = com.huawei.obs.bench.utils.HashUtil.splitMix64(seed);

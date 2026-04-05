@@ -5,6 +5,7 @@ import com.obs.services.ObsClient;
 import com.obs.services.exception.ObsException;
 import com.obs.services.model.*;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 
@@ -199,16 +200,20 @@ public class RealObsAdapter implements IObsClientAdapter {
 
     @Override
     public int resumableUpload(String bucketName, String objectKey, String filePath, int taskNum, long partSize, boolean enableCheckpoint) {
-        try {
+        try { 
+            File f = new File(filePath);
             // Use SDK's high-level resumable upload interface
             UploadFileRequest request = new UploadFileRequest(bucketName, objectKey);
             request.setUploadFile(filePath);
             request.setTaskNum(taskNum);
             request.setPartSize(partSize);
             request.setEnableCheckpoint(enableCheckpoint);
+            if (enableCheckpoint) {
+                request.setCheckpointFile("upload_checkpoint/" + objectKey + ".cp");
+            }
 
             CompleteMultipartUploadResult result = obsClient.uploadFile(request);
-            lastRequestBytes.set(0L);
+            lastRequestBytes.set(f.length());
             return result.getStatusCode();
         } catch (ObsException e) {
             return e.getResponseCode();

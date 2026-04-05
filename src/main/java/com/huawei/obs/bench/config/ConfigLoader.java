@@ -56,6 +56,7 @@ public class ConfigLoader {
             long objectSizeMax = parsedObjectSize[1];
             long partSize = Long.parseLong(props.getProperty("PartSize", "5242880"));
             int partsForEachUploadID = Integer.parseInt(props.getProperty("PartsForEachUploadID", "1"));
+            Integer resumableThreads = parseIntegerOrNull(props.getProperty("ResumableThreads", ""));
 
             boolean objNamePatternHash = Boolean.parseBoolean(props.getProperty("ObjNamePatternHash", "true"));
             boolean enableDataValidation = Boolean.parseBoolean(props.getProperty("EnableDataValidation", "false"));
@@ -74,7 +75,7 @@ public class ConfigLoader {
                 testCaseCode,
                 bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
                 objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
-                mixOperations, mixLoopCount, partsForEachUploadID
+                mixOperations, mixLoopCount, partsForEachUploadID, resumableThreads
             );
         } catch (NumberFormatException e) {
             throw new RuntimeException("[Fatal] Invalid number format in config.dat, please check values!", e);
@@ -128,6 +129,17 @@ public class ConfigLoader {
             return Long.parseLong(raw.trim());
         } catch (NumberFormatException e) {
             return defaultValue;
+        }
+    }
+
+    private static Integer parseIntegerOrNull(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return -1; // Use -1 to indicate invalid format, will be validated in Bootstrap
         }
     }
 
