@@ -44,6 +44,9 @@ MixLoopCount=0
 BucketNameFixed=zengyu-test
 # Dynamic Bucket Name Prefix (Effective if BucketNameFixed is empty, format: ak.prefix)
 BucketNamePrefix=
+# [Object Key Attributes]
+# Fixed Object Name (Highest priority, all requests use this if configured)
+ObjectNameFixed=
 # Object Key Prefix
 KeyPrefix=java_bench_test_
 # [Upload File Path]

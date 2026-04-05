@@ -144,8 +144,13 @@ public class WorkerTask implements Runnable {
                 }
 
                 // 3. Zero-allocation object key generation
-                HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getCredential().username(), context.getThreadId(), objectSeqId, config.objNamePatternHash());
-                String objectKey = keyBuilder.toString();
+                String objectKey;
+                if (config.objectNameFixed() != null && !config.objectNameFixed().isEmpty()) {
+                    objectKey = config.objectNameFixed();
+                } else {
+                    HashUtil.generateObjectKey(keyBuilder, config.keyPrefix(), context.getCredential().username(), context.getThreadId(), objectSeqId, config.objNamePatternHash());
+                    objectKey = keyBuilder.toString();
+                }
 
                 // 4. Determine Dynamic Object Size & Set Buffer Limit
                 long currentSize = config.objectSizeMin();

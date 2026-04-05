@@ -47,6 +47,7 @@ public class ConfigLoader {
 
             String bucketNameFixed = props.getProperty("BucketNameFixed", "").trim();
             String bucketNamePrefix = props.getProperty("BucketNamePrefix", "bench-bucket").trim();
+            String objectNameFixed = props.getProperty("ObjectNameFixed", "").trim();
             String keyPrefix = props.getProperty("KeyPrefix", "bench_test_").trim();
             String uploadFilePath = props.getProperty("UploadFilePath", "").trim();
             long[] parsedObjectSize = parseObjectSize(props.getProperty("ObjectSize", "1048576"));
@@ -68,7 +69,7 @@ public class ConfigLoader {
                 maxConnections, socketTimeoutMs, connectionTimeoutMs,
                 usersCount, threadsPerUser, runSeconds, requestsPerThread,
                 testCaseCode,
-                bucketNameFixed, bucketNamePrefix, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
+                bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
                 objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
                 mixOperations, mixLoopCount
             );

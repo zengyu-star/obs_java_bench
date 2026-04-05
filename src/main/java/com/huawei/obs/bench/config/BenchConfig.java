@@ -39,6 +39,7 @@ public record BenchConfig(
     // ==========================================
     String bucketNameFixed,    // Fixed bucket name (highest priority)
     String bucketNamePrefix,   // Dynamic bucket prefix (ak.prefix)
+    String objectNameFixed,    // Fixed object name (highest priority)
     String keyPrefix,          // Object name prefix
     String uploadFilePath,     // Local file path used for Resumable/Multipart upload testing
     long objectSizeMin,        // Minimum object size (Bytes)
@@ -106,7 +107,7 @@ public record BenchConfig(
             maxConnections, socketTimeoutMs, connectionTimeoutMs,
             usersCount, threadsPerUser, runSeconds, requestsPerThread,
             code, // The override
-            bucketNameFixed, bucketNamePrefix, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
+            bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
             objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
             mixOperations, mixLoopCount
         );
