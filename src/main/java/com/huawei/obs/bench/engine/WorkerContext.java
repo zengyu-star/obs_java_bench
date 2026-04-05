@@ -35,14 +35,24 @@ public class WorkerContext {
         this.credential = credential;
         this.adapter = adapter;
         
-        // [Critical Logic]: Dynamically determine target bucket name
-        if (config.bucketNameFixed() != null && !config.bucketNameFixed().isBlank()) {
-            // Mode A: Use global fixed bucket name
-            this.targetBucket = config.bucketNameFixed();
-        } else {
-            // Mode B: Use tenant-specific dynamic bucket name {accessKey_lowercase}.{prefix}
-            this.targetBucket = credential.accessKey().toLowerCase() + "." + config.bucketNamePrefix();
+        // [Rule]: BucketNameFixed and BucketNamePrefix must not both be empty
+        boolean hasFixed = config.bucketNameFixed() != null && !config.bucketNameFixed().isBlank();
+        boolean hasPrefix = config.bucketNamePrefix() != null && !config.bucketNamePrefix().isBlank();
+        if (!hasFixed && !hasPrefix) {
+            throw new IllegalArgumentException("Benchmark Error: BucketNameFixed and BucketNamePrefix (in config.dat) cannot both be empty!");
         }
+
+        // [Rule]: Determine target bucket name
+        String rawBucket;
+        if (hasFixed) {
+            rawBucket = config.bucketNameFixed();
+        } else {
+            // Requirement: {ak}.{BucketNamePrefix} (Use dot, not hyphen)
+            rawBucket = credential.accessKey().toLowerCase() + "." + config.bucketNamePrefix();
+        }
+
+        // Final Sanitization: Ensure lowercase and replace illegal underscores with hyphens
+        this.targetBucket = rawBucket.toLowerCase().replace('_', '-');
     }
 
     // ================== Getters & Setters ==================

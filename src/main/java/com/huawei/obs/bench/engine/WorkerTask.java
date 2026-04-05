@@ -83,7 +83,7 @@ public class WorkerTask implements Runnable {
                 String logFile = String.format("%s/detail_%d_part0.csv", taskDir, workerId);
                 try {
                     this.detailWriter = new java.io.PrintWriter(new java.io.BufferedWriter(new java.io.FileWriter(logFile)));
-                    this.detailWriter.println("ThreadID,RequestID,Operation,ObjectKey,StartTimeMs,LatencyMs,StatusCode,ObsRequestId");
+                    this.detailWriter.println("ThreadID,RequestID,Operation,BucketName,ObjectKey,StartTimeMs,LatencyMs,StatusCode,ObsRequestId");
                 } catch (java.io.IOException e) {
                     System.err.println("[WARN] Worker-" + workerId + " failed to init detail log: " + e.getMessage());
                 }
@@ -166,7 +166,7 @@ public class WorkerTask implements Runnable {
 
                 // 5. Execute operation with high-precision timing
                 long reqStartNanos = System.nanoTime();
-                int statusCode = executeOperation(adapter, currentTestCase, targetBucket, objectKey, payloadBuffer, context.getReceiveBuffer());
+                int statusCode = executeOperation(adapter, config, currentTestCase, targetBucket, objectKey, payloadBuffer, context.getReceiveBuffer());
                 long latencyNanos = System.nanoTime() - reqStartNanos;
 
                 // 6. Thread-safe stats update
@@ -178,6 +178,7 @@ public class WorkerTask implements Runnable {
                     csvBuilder.append(workerId).append(',')
                               .append(seq).append(',')
                               .append(currentTestCase).append(',')
+                              .append(targetBucket).append(',')
                               .append(objectKey).append(',')
                               .append(System.currentTimeMillis()).append(',');
                     fastAppendDouble(csvBuilder, latencyNanos / 1_000_000.0, 3);
@@ -209,8 +210,9 @@ public class WorkerTask implements Runnable {
     /**
      * Operation Router: Maps TestCase to the corresponding interface
      */
-    private int executeOperation(IObsClientAdapter adapter, int testCaseCode, String bucket, String key, ByteBuffer payload, ByteBuffer receiveBuffer) {
+    private int executeOperation(IObsClientAdapter adapter, BenchConfig config, int testCaseCode, String bucket, String key, ByteBuffer payload, ByteBuffer receiveBuffer) {
         return switch (testCaseCode) {
+            case 101 -> adapter.createBucket(bucket, config.bucketLocation());
             case 201 -> adapter.putObject(bucket, key, payload);
             case 202 -> adapter.getObject(bucket, key, null, payload, receiveBuffer);
             case 204 -> adapter.deleteObject(bucket, key);

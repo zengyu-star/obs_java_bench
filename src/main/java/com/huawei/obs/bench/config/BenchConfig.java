@@ -13,6 +13,7 @@ public record BenchConfig(
     String protocol,           // http or https
     boolean isTemporaryToken,  // Whether to use STS temporary credentials
     String logLevel,           // Tool log level (DEBUG, INFO, WARN, ERROR)
+    String bucketLocation,    // Bucket region ID (e.g., cn-north-4)
 
     // ==========================================
     // 2. Low-level Java Connection Pool Tuning
@@ -103,7 +104,7 @@ public record BenchConfig(
      */
     public BenchConfig withTestCaseCode(int code) {
         return new BenchConfig(
-            endpoint, protocol, isTemporaryToken, logLevel,
+            endpoint, protocol, isTemporaryToken, logLevel, bucketLocation,
             maxConnections, socketTimeoutMs, connectionTimeoutMs,
             usersCount, threadsPerUser, runSeconds, requestsPerThread,
             code, // The override

@@ -8,6 +8,7 @@ import java.nio.ByteBuffer;
  * Architectural Requirement: Return values must be HTTP status codes (int) for high-speed statistics.
  */
 public interface IObsClientAdapter {
+    int createBucket(String bucketName, String location);
 
     /**
      * TestCase 201: Simple Object Upload (PUT Object)

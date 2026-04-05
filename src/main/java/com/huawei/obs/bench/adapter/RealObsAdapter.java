@@ -33,6 +33,37 @@ public class RealObsAdapter implements IObsClientAdapter {
     }
 
     @Override
+    public int createBucket(String bucketName, String location) {
+        try {
+            CreateBucketRequest request = new CreateBucketRequest();
+            request.setBucketName(bucketName);
+            
+            // [Align with Demo]: Set standard bucket attributes
+            request.setAcl(AccessControlList.REST_CANNED_PRIVATE);
+            request.setBucketStorageClass(StorageClassEnum.STANDARD);
+            
+            if (location != null && !location.isBlank()) {
+                request.setLocation(location);
+            }
+            
+            // [Note]: Some regions/accounts might require explicit AZ setting. 
+            // Default is usually single AZ, demo uses MULTI_AZ.
+            // request.setAvailableZone(AvailableZoneEnum.MULTI_AZ); 
+
+            ObsBucket result = obsClient.createBucket(request);
+            this.lastRequestId = result.getRequestId();
+            lastRequestBytes.set(0L);
+            return result.getStatusCode();
+        } catch (ObsException e) {
+            this.lastRequestId = e.getErrorRequestId();
+            return e.getResponseCode();
+        } catch (Exception e) {
+            this.lastRequestId = "CLIENT_ERROR";
+            return 0;
+        }
+    }
+
+    @Override
     public int putObject(String bucketName, String objectKey, ByteBuffer payload) {
         try {
             PutObjectRequest request = new PutObjectRequest();

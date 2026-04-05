@@ -4,13 +4,13 @@
 
 # [1. Basic Network & Authentication]
 # OBS Service Endpoint (e.g., obs.ap-southeast-1.myhuaweicloud.com)
-Endpoint=obs.ap-southeast-1.myhuaweicloud.com
+Endpoint=obs.cn-north-4.myhuaweicloud.com
 # Protocol (https/http)
 Protocol=http
 # Whether to use STS temporary credentials (true/false)
-IsTemporaryToken=true
+IsTemporaryToken=false
 # Tool Log Level (DEBUG, INFO, WARN, ERROR)
-LogLevel=INFO
+LogLevel=DEBUG
 
 # [2. Low-level Java Connection Pool Tuning]
 # Max concurrent connections (Arch suggestion: >= UsersCount * ThreadsPerUser)
@@ -28,10 +28,10 @@ ThreadsPerUser=1
 # Benchmark duration (seconds), empty means unlimited
 RunSeconds=60
 # Max requests per thread
-RequestsPerThread=2
+RequestsPerThread=1
 # [4. Test Case Routing]
-# TestCase choices: 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
-TestCaseCode=201
+# TestCase choices: 101=CREATE_BUCKET, 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
+TestCaseCode=101
 
 # Mixed Workload Configuration (Active only if TestCaseCode=900)
 # MixOperation: List of operations involved in the mix, comma-separated
@@ -41,14 +41,16 @@ MixLoopCount=0
 
 # [5. Object & Data Attributes]
 # Fixed Bucket Name (Highest priority, shared by all tenants if configured)
-BucketNameFixed=zengyu-test
+BucketNameFixed=zengyu-test-0405
 # Dynamic Bucket Name Prefix (Effective if BucketNameFixed is empty, format: ak.prefix)
 BucketNamePrefix=
+# Bucket Location (Used for TestCase 101, e.g., cn-north-4)
+BucketLocation=cn-north-4
 # [Object Key Attributes]
 # Fixed Object Name (Highest priority, all requests use this if configured)
 ObjectNameFixed=
 # Object Key Prefix
-KeyPrefix=java_bench_test_
+KeyPrefix=java-bench-test
 # [Upload File Path]
 # Path to local file intended for Multipart (216) or Resumable (230) Test Cases
 UploadFilePath=

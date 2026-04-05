@@ -26,6 +26,15 @@ public class MockObsAdapter implements IObsClientAdapter {
     }
 
     @Override
+    public int createBucket(String bucketName, String location) {
+        simulateNetworkLatency();
+        lastRequestBytes.set(0L);
+        // Simple mock: 90% success (200), 10% already exists (409)
+        int rand = ThreadLocalRandom.current().nextInt(10);
+        return rand < 9 ? 200 : 409;
+    }
+
+    @Override
     public int putObject(String bucketName, String objectKey, ByteBuffer payload) {
         simulateNetworkLatency();
         lastRequestBytes.set(payload != null ? (long) payload.limit() : 0L);

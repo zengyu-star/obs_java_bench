@@ -47,6 +47,7 @@ public class ConfigLoader {
 
             String bucketNameFixed = props.getProperty("BucketNameFixed", "").trim();
             String bucketNamePrefix = props.getProperty("BucketNamePrefix", "bench-bucket").trim();
+            String bucketLocation = props.getProperty("BucketLocation", "").trim();
             String objectNameFixed = props.getProperty("ObjectNameFixed", "").trim();
             String keyPrefix = props.getProperty("KeyPrefix", "bench_test_").trim();
             String uploadFilePath = props.getProperty("UploadFilePath", "").trim();
@@ -65,7 +66,7 @@ public class ConfigLoader {
             long mixLoopCount = parseLongOrDefault(props.getProperty("MixLoopCount", ""), 0);
 
             return new BenchConfig(
-                endpoint, protocol, isTemporaryToken, logLevel,
+                endpoint, protocol, isTemporaryToken, logLevel, bucketLocation,
                 maxConnections, socketTimeoutMs, connectionTimeoutMs,
                 usersCount, threadsPerUser, runSeconds, requestsPerThread,
                 testCaseCode,
