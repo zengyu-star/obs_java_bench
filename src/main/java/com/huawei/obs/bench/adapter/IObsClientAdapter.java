@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
  */
 public interface IObsClientAdapter {
     int createBucket(String bucketName, String location);
+    int deleteBucket(String bucketName);
 
     /**
      * TestCase 201: Simple Object Upload (PUT Object)

@@ -31,7 +31,7 @@ RunSeconds=60
 RequestsPerThread=1
 # [4. Test Case Routing]
 # TestCase choices: 101=CREATE_BUCKET, 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
-TestCaseCode=101
+TestCaseCode=104
 
 # Mixed Workload Configuration (Active only if TestCaseCode=900)
 # MixOperation: List of operations involved in the mix, comma-separated

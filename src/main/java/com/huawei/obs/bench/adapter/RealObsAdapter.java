@@ -64,6 +64,22 @@ public class RealObsAdapter implements IObsClientAdapter {
     }
 
     @Override
+    public int deleteBucket(String bucketName) {
+        try {
+            HeaderResponse result = obsClient.deleteBucket(bucketName);
+            this.lastRequestId = result.getRequestId();
+            lastRequestBytes.set(0L);
+            return result.getStatusCode();
+        } catch (ObsException e) {
+            this.lastRequestId = e.getErrorRequestId();
+            return e.getResponseCode();
+        } catch (Exception e) {
+            this.lastRequestId = "CLIENT_ERROR";
+            return 0;
+        }
+    }
+
+    @Override
     public int putObject(String bucketName, String objectKey, ByteBuffer payload) {
         try {
             PutObjectRequest request = new PutObjectRequest();

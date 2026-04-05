@@ -213,6 +213,7 @@ public class WorkerTask implements Runnable {
     private int executeOperation(IObsClientAdapter adapter, BenchConfig config, int testCaseCode, String bucket, String key, ByteBuffer payload, ByteBuffer receiveBuffer) {
         return switch (testCaseCode) {
             case 101 -> adapter.createBucket(bucket, config.bucketLocation());
+            case 104 -> adapter.deleteBucket(bucket);
             case 201 -> adapter.putObject(bucket, key, payload);
             case 202 -> adapter.getObject(bucket, key, null, payload, receiveBuffer);
             case 204 -> adapter.deleteObject(bucket, key);

@@ -35,6 +35,14 @@ public class MockObsAdapter implements IObsClientAdapter {
     }
 
     @Override
+    public int deleteBucket(String bucketName) {
+        simulateNetworkLatency();
+        lastRequestBytes.set(0L);
+        // Simple mock: Always success (204)
+        return 204;
+    }
+
+    @Override
     public int putObject(String bucketName, String objectKey, ByteBuffer payload) {
         simulateNetworkLatency();
         lastRequestBytes.set(payload != null ? (long) payload.limit() : 0L);
