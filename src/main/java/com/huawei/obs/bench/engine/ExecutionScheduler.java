@@ -8,6 +8,7 @@ import com.huawei.obs.bench.config.ObsClientManager;
 import com.huawei.obs.bench.config.UserCredential;
 import com.huawei.obs.bench.monitor.BenchmarkStats;
 import com.huawei.obs.bench.monitor.MonitorService;
+import com.huawei.obs.bench.utils.LogUtil;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -69,6 +70,7 @@ public class ExecutionScheduler {
         for (UserCredential user : users) {
             // Build independent Context and Task for each thread of each user
             for (int t = 0; t < config.threadsPerUser(); t++) {
+                LogUtil.debug("SCHEDULER", "Initializing Worker Thread for user: " + user.username());
                 WorkerContext context = buildWorkerContext(workerId, user);
                 WorkerTask worker = new WorkerTask(context, globalStats, readyLatch, startGun, doneLatch, taskDir, workerId);
                 

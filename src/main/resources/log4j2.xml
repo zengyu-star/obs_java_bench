@@ -10,15 +10,33 @@
             <!-- Simple and clean single-line geek-style output layout for high readability -->
             <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{1.} - %msg%n" />
         </Console>
+        
+        <!-- [New]: Dynamic SDK Log File. Path is set via System Property 'logDir' in Bootstrap.java -->
+        <File name="SdkFile" fileName="${sys:logDir}/sdk.log" append="false">
+             <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n" />
+        </File>
+        
+        <!-- [New]: Tool-level Bench Log File. Path is set via System Property 'logDir' in Bootstrap.java -->
+        <File name="BenchFile" fileName="${sys:logDir}/bench.log" append="false">
+             <PatternLayout pattern="[%d{yyyy-MM-dd HH:mm:ss}] [%-5level] %msg%n" />
+        </File>
     </Appenders>
 
     <Loggers>
         <AsyncLogger name="com.obs" level="ERROR" includeLocation="false" additivity="false">
-             <AppenderRef ref="Console"/>
+             <AppenderRef ref="Console" level="WARN"/>
+             <AppenderRef ref="SdkFile"/>
         </AsyncLogger>
         
         <AsyncLogger name="org.apache.http" level="ERROR" includeLocation="false" additivity="false">
-            <AppenderRef ref="Console"/>
+            <AppenderRef ref="Console" level="WARN"/>
+            <AppenderRef ref="SdkFile"/>
+        </AsyncLogger>
+        
+        <!-- [New]: Tool Core Logger. Controlled by config.dat -> LogLevel -->
+        <AsyncLogger name="com.huawei.obs.bench" level="ERROR" includeLocation="false" additivity="false">
+             <AppenderRef ref="Console" level="WARN"/>
+             <AppenderRef ref="BenchFile"/>
         </AsyncLogger>
 
         <AsyncRoot level="ERROR" includeLocation="false">

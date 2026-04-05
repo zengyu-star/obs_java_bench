@@ -13,6 +13,7 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import org.apache.logging.log4j.core.LoggerContext;
 
 /**
  * obs_java_bench Core Entrypoint
@@ -25,7 +26,12 @@ public class Bootstrap {
         String taskDir = "logs/task_" + timestamp;
         new File(taskDir).mkdirs();
 
+        // [Architect's note]: Bridge the dynamic task directory to Log4j2 SdkFile Appender
+        System.setProperty("logDir", taskDir);
+        LoggerContext.getContext(false).reconfigure();
+
         printHeader(taskDir);
+        LogUtil.debug("MAIN", "Initializing benchmark system with taskDir: " + taskDir);
 
         // 1. Smart CLI Argument Parsing
         String configPath = "config.dat";
