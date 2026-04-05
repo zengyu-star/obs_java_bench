@@ -54,12 +54,18 @@ public record BenchConfig(
     boolean enableDataValidation, // Whether to enable LCG zero-copy validation
     boolean enableDetailLog,      // Whether to enable asynchronous detail logging
     boolean isMockMode,           // Whether to enable offline Mock mode
+    boolean enableCheckpoint,     // Whether to enable resumable checkpoints
 
     // ==========================================
     // 7. Mixed Workload Mode 900
     // ==========================================
     int[] mixOperations,          // List of operation codes for MIX mode
-    long mixLoopCount             // Number of cycles for MIX mode
+    long mixLoopCount,            // Number of cycles for MIX mode
+
+    // ==========================================
+    // 8. Controlled Multipart Actions
+    // ==========================================
+    int partsForEachUploadID      // [New]: Number of parts per multipart upload
 ) {
     /**
      * Compact Constructor
@@ -90,6 +96,11 @@ public record BenchConfig(
         if (runSeconds == 0) {
              System.out.println("[INFO] RunSeconds is empty. Benchmark will run until each thread completes " + requestsPerThread + " requests.");
         }
+
+        // 5. Multipart Parameter Validation
+        if (testCaseCode == 216 && partsForEachUploadID <= 0) {
+             throw new IllegalArgumentException("PartsForEachUploadID must be a positive integer (> 0) when TestCaseCode is 216 (Multipart Upload)");
+        }
     }
 
     /**
@@ -109,8 +120,8 @@ public record BenchConfig(
             usersCount, threadsPerUser, runSeconds, requestsPerThread,
             code, // The override
             bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
-            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
-            mixOperations, mixLoopCount
+            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
+            mixOperations, mixLoopCount, partsForEachUploadID
         );
     }
 }

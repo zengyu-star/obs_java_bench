@@ -65,7 +65,12 @@ public class WorkerTask implements Runnable {
                 }
                 
                 if (needsUploadBuffer || (config.testCaseCode() == 202 && config.enableDataValidation())) {
-                    ByteBuffer buffer = ByteBuffer.allocateDirect((int) config.objectSizeMax());
+                    long requiredSize = config.objectSizeMax();
+                    if (config.testCaseCode() == 216) {
+                        requiredSize = (long) config.partsForEachUploadID() * config.partSize();
+                    }
+                    
+                    ByteBuffer buffer = ByteBuffer.allocateDirect((int) requiredSize);
                     context.setPatternBuffer(buffer);
                     if (config.enableDataValidation()) {
                         context.fillPatternBuffer();
@@ -156,8 +161,12 @@ public class WorkerTask implements Runnable {
                 long currentSize = config.objectSizeMin();
                 if (payloadBuffer != null && isUploadTask(currentTestCase)) {
                     payloadBuffer.rewind();
-                    if (config.objectSizeMax() > config.objectSizeMin()) {
+                    if (currentTestCase == 216) {
+                        currentSize = (long) config.partsForEachUploadID() * config.partSize();
+                    } else if (config.objectSizeMax() > config.objectSizeMin()) {
                         currentSize = java.util.concurrent.ThreadLocalRandom.current().nextLong(config.objectSizeMin(), config.objectSizeMax() + 1);
+                    } else {
+                        currentSize = config.objectSizeMax();
                     }
                     payloadBuffer.limit((int) currentSize);
                 } else if (payloadBuffer != null) {
@@ -217,7 +226,8 @@ public class WorkerTask implements Runnable {
             case 201 -> adapter.putObject(bucket, key, payload);
             case 202 -> adapter.getObject(bucket, key, null, payload, receiveBuffer);
             case 204 -> adapter.deleteObject(bucket, key);
-            // Future expansion for 216(Multipart) and 230(Resumable)
+            case 216 -> adapter.multipartUpload(bucket, key, payload, config.partsForEachUploadID(), config.partSize());
+            case 230 -> adapter.resumableUpload(bucket, key, config.uploadFilePath(), Runtime.getRuntime().availableProcessors(), config.partSize(), config.enableCheckpoint());
             default -> throw new IllegalArgumentException("Unknown TestCaseCode: " + testCaseCode);
         };
     }

@@ -9,103 +9,93 @@
 
 ## 🎯 核心特性 (Key Features)
 
-* **零分配 (Zero-Allocation) & 零 GC (Zero-GC)**: 在压测的核心主循环发令模块内，完全屏蔽了 `new` 操作和短促生命周期对象，避免压测过程中产生因为 GC 引发的性能抖动。
-* **零拷贝 (Zero-Copy) 内存缓冲**: 利用 `DirectByteBuffer`（堆外内存）在操作系统内核态提前打满测试载荷，测试发流阶段复用游标直接读区内存，避免业务数据的 Byte 复制。
-* **发令枪并发模型 (Start-Gun Mechanism)**: 引入强一致性的线程等待 `CountDownLatch` 等发令机制构建屏障，确保瞬时高并发线程能在严格同步的一瞬间扣动“扳机”。
-* **无锁监控采集**: 打破传统的互斥锁方案，全盘引入 `LongAdder` 及 `Atomic` 构建数据采集统计模块，支持千万级极低开销的数据累加。
-* **高精度时延度量 (HdrHistogram)**: 内置 HdrHistogram 实现无偏差的、纳秒精度的时延数据统计。包含 P50、P90、P99 及最大分布时延报告。
+* **零分配 (Zero-Allocation) & 零 GC (Zero-GC)**: 在压测核心主循环内屏蔽 `new` 操作，避免 GC 引发的性能抖动。
+* **零拷贝 (Zero-Copy) 内存缓冲**: 利用 `DirectByteBuffer` 提前加载测试载荷，避免业务数据在堆内外的重复复制。
+* **发令枪并发模型 (Start-Gun Mechanism)**: 使用 `CountDownLatch` 确保所有线程在同一瞬间开始请求。
+* **无锁监控采集**: 引入 `LongAdder` 和 `HdrHistogram` 实现极低开销的数据统计。
+* **智能桶名生成**: 支持多租户下的 `{ak}.{prefix}` 动态桶名自动生成及 DNS 规范化校验。
 
 ---
 
 ## 🚀 极速构建与运行 (Quick Start)
 
 ### 1. 编译打包
-请确保您的环境安装有 **Java 17+** 和 **Maven 3.x**。
+请确保您的环境安装有 **Java 17+** (推荐 OpenJDK) 和 **Maven 3.x**。
 ```bash
 mvn clean package -DskipTests
 ```
-> 如果系统没有默认的 `mvn`，可以使用绝对路径，例如 `/usr/local/maven/bin/mvn clean package -DskipTests`
-
-打包成功后，将在 `target/` 目录下生成包含所有依赖包（Log4j2 / OBS SDK / Disruptor 等）的 `obs_java_bench-1.0.0-SNAPSHOT.jar` 终态文件。
+或直接运行工作流（如有配置环境支持）：
+```bash
+/build-run
+```
 
 ### 2. 执行压测
-压测启动只需要输入配置文件的相对路径即可即可。
+工具支持智能参数解析，会自动寻找目录下的 `.dat` 配置文件：
 ```bash
-java -jar target/obs_java_bench-1.0.0-SNAPSHOT.jar conf/config.dat conf/users.dat
+# 默认使用当前目录下的 config.dat 和 users.dat
+java -jar target/obs_java_bench-1.0.0-SNAPSHOT.jar 
+
+# 也可以显式指定路径或 TestCaseCode 覆盖配置
+java -jar target/obs_java_bench-1.0.0-SNAPSHOT.jar config.dat users.dat 101
 ```
 
 ---
 
 ## ⚙️ 参数配置指南 (Configuration)
 
-工具的所有环境依赖配置化。您主要需要修改 `conf/config.dat` (压测场景参数) 和 `conf/users.dat` (凭证参数) 两个文件。
-
-### `conf/config.dat`
-
-主要核心配置说明如下：
+### `config.dat` (压测场景参数)
 
 ```properties
-# ==================== 网络认证项 =====================
+# ==================== 网络与认证 =====================
 Endpoint=obs.cn-north-4.myhuaweicloud.com   # 目标区域地址
-IsSecure=true                               # 是否启用 HTTPS，HTTPS 开销更大
-IsMockMode=false                            # 是否离线模拟发流请求 (用于自测)
+Protocol=http                               # 协议选择 (http/https)
+IsTemporaryToken=false                      # 是否启用 STS 临时凭证
 
-# ==================== 并发与控制 =====================
-MaxConnections=2000                         # 底层连接池最大连接数(需大于UsersCount*ThreadsPerUser)
-UsersCount=1                                # 并发用户数
-ThreadsPerUser=50                           # 单一用户拥有的压测线程数
-RunSeconds=60                               # 连续压压测试验时长 (秒)
-TestCaseCode=201                            # 压测路由指令
+# ==================== 存储与桶策略 =====================
+BucketNameFixed=zengyu-test-0405            # 固定桶名 (最高优先级)
+BucketNamePrefix=bench-bucket               # 动态前缀 (若 Fixed 为空，格式为 {ak}.prefix)
+BucketLocation=cn-north-4                   # 桶所在区域 (Case 101/104 必填)
 
-# ==================== 存储与载荷 =====================
-BucketName=my-bench-bucket                  # 压测打向的具体通名
-KeyPrefix=bench_test_run_                   # 在该桶中生成的测试对象名前缀
-ObjectSize=1048576                          # 上传/读取 基础请求单片 Payload 大小（字节）
+# ==================== 对象属性 =====================
+KeyPrefix=java-bench-test                   # 对象名前缀
+ObjectSize=1048576                          # 单个对象大小 (字节)
+EnableDetailLog=true                        # 是否开启详细请求日志记录 (detail.csv)
+
+# ==================== 并发控制 =====================
+UsersCount=1                                # 并发用户数 (对应 users.dat 行数)
+ThreadsPerUser=50                           # 单一用户压测线程数
+RunSeconds=60                               # 压测总时长 (秒)
+TestCaseCode=201                            # 压测路由指令 (详见下方列表)
 ```
 
-**支持的常用 `TestCaseCode` 列表**：
-- `201`：**上传对象** (`PutObject`)
-- `202`：**下载对象** (`GetObject`) - 目前会做 Range / Drain InputStream 调优排空流控制。
-- `204`：**删除对象** (`DeleteObject`)
-- `216`：**分段上传** (`MultipartUpload`)
-- `230`：**断点续传** (`ResumableUploadFile`)
+**支持的 `TestCaseCode` 列表**：
+- `101`: **创建桶** (`CreateBucket`)
+- `104`: **删除桶** (`DeleteBucket`)
+- `201`: **上传对象** (`PutObject`)
+- `202`: **下载对象** (`GetObject`)
+- `204`: **删除对象** (`DeleteObject`)
+- `216`: **分段上传** (`MultipartUpload`)
+- `230`: **断点续传** (`ResumableUploadFile`)
+- `900`: **混合模式** (`MixMode`)
 
-### `conf/users.dat`
+### `users.dat` (多租户凭证)
 
-在这里配置您用于登录华为云的凭证信息。CSV 格式文本，每一行对应 `UsersCount` 的一个用户：
+⚠️ **安全警告**：由于此处包含真实 AK/SK，该文件已被加入 `.gitignore`。**严禁提交此文件到任何公共代码仓库！**
 ```csv
-# username, ak, sk
-hw_user_a, 真实AK1, 真实SK1
-hw_user_b, 真实AK2, 真实SK2
+# username, ak, sk, [sts_token]
+hw_user_a, YOUR_AK_1, YOUR_SK_1
+hw_user_b, YOUR_AK_2, YOUR_SK_2
 ```
-
-> **提示**：如果遇到安全问题，您也可以通过添加一列配置 `[sts_token]` 来传递 STS 临时凭证。
 
 ---
 
-## 📈 压测报告解读 (Benchmarking Report)
+## 📈 压测报告与日志 (Reporting)
 
-工具将在运行时为您以 1 秒为固定帧率输出压测快照：
-```text
-=========================================================================================
-Time(s)    | TPS        | Bandwidth(MB/s) | Total Succ   | Errors(403/404/5xx/Client)
-=========================================================================================
-```
+压测结束后，将在控制台输出 **FINAL SUMMARY**，包含平均 TPS、带宽及精确到 P99.9 的时延分布。
 
-压测在 `RunSeconds` 时限结束后，将抛出权威的基准测试总结：
-```text
-================= 🏆 BENCHMARK FINAL SUMMARY 🏆 =================
-Total Time Elapsed: 60 seconds
-Total Requests:     31109 (Success)
-Average TPS:        518.48 req/s
-Average Bandwidth:  518.48 MB/s
--------------------------------------------------------------------
-[Latency Distribution]
-  P50 (Median):  1.52 ms
-  P90 Latency:   2.89 ms
-  P99 Latency:   8.41 ms
-  P99.9 Latency: 12.05 ms
-  Max Latency:   30.22 ms
-===================================================================
-```
-*注：由于工具自身消耗近乎为 0，所报告的纳秒级 P99 数据，可视为对 OBS 服务端最公正、最直观的响应延时性能体现。*
+**详细请求追踪**：
+开启 `EnableDetailLog=true` 后，工具会在 `logs/task_YYYYMMDD_HHMMSS/` 下生成 `detail_0_part0.csv`，其中包含：
+- `BucketName`: 实际操作的桶名。
+- `ObjectKey`: 实际操作的对象名。
+- `StatusCode`: HTTP 状态码（如 200, 204, 403, 404 等）。
+- `ObsRequestId`: 用于云端故障隔离的唯一请求 ID。

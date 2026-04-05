@@ -55,11 +55,13 @@ public class ConfigLoader {
             long objectSizeMin = parsedObjectSize[0];
             long objectSizeMax = parsedObjectSize[1];
             long partSize = Long.parseLong(props.getProperty("PartSize", "5242880"));
+            int partsForEachUploadID = Integer.parseInt(props.getProperty("PartsForEachUploadID", "1"));
 
             boolean objNamePatternHash = Boolean.parseBoolean(props.getProperty("ObjNamePatternHash", "true"));
             boolean enableDataValidation = Boolean.parseBoolean(props.getProperty("EnableDataValidation", "false"));
             boolean enableDetailLog = Boolean.parseBoolean(props.getProperty("EnableDetailLog", "false"));
             boolean isMockMode = Boolean.parseBoolean(props.getProperty("IsMockMode", "false"));
+            boolean enableCheckpoint = Boolean.parseBoolean(props.getProperty("EnableCheckpoint", "true"));
 
             // Parse Mixed Mode 900 fields
             int[] mixOperations = parseMixOperations(props.getProperty("MixOperation", ""));
@@ -71,8 +73,8 @@ public class ConfigLoader {
                 usersCount, threadsPerUser, runSeconds, requestsPerThread,
                 testCaseCode,
                 bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
-                objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode,
-                mixOperations, mixLoopCount
+                objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
+                mixOperations, mixLoopCount, partsForEachUploadID
             );
         } catch (NumberFormatException e) {
             throw new RuntimeException("[Fatal] Invalid number format in config.dat, please check values!", e);
