@@ -83,9 +83,6 @@ public class Bootstrap {
             BenchConfig config = ConfigLoader.loadConfig(configPath);
             LogUtil.setLogLevel(config.logLevel());
             
-            // [Architect Optimization]: Perform fool-proof configuration validation
-            ConfigValidator.validate(config, usersPath);
-            
             if (testCaseCodeOverride != null) {
                 LogUtil.info("MAIN", "CLI Override detected! Using TestCaseCode: " + testCaseCodeOverride);
                 config = config.withTestCaseCode(testCaseCodeOverride);
@@ -179,8 +176,8 @@ public class Bootstrap {
 
             LogUtil.info("MAIN", "Execution report saved to: " + taskDir + "/brief.txt");
 
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            System.err.println("\n[Startup Failed - Configuration Error] " + e.getMessage());
+        } catch (IllegalArgumentException e) {
+            System.err.println(e.getMessage());
             System.exit(1);
         } catch (InterruptedException e) {
             System.err.println("\n[Startup Failed] Benchmark was interrupted!");

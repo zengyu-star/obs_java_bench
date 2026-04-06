@@ -70,39 +70,123 @@ public record BenchConfig(
     int partsForEachUploadID,     // [New]: Number of parts per multipart upload
     Integer resumableThreads      // [New]: Internal concurrency for Resumable Upload (TestCase 230)
 ) {
+    private static final java.util.Set<String> ALLOWED_PROTOCOLS = java.util.Set.of("http", "https");
+    private static final java.util.Set<String> ALLOWED_LOG_LEVELS = java.util.Set.of("DEBUG", "INFO", "CONFIG", "WARN", "ERROR");
+
     /**
      * Compact Constructor
-     * Includes defensive validations to catch misconfigurations at startup.
+     * Strictly enforces all configuration rules at instantiation time.
+     * Aligns with Directive 6 of .cursorrules.
      */
     public BenchConfig {
-        // 1. Concurrency Parameter Validation
-        if (usersCount <= 0) {
-            throw new IllegalArgumentException("UsersCount must be > 0");
+        java.util.List<String> errors = new java.util.ArrayList<>();
+
+        // 1. Global Requirements
+        if (endpoint == null || endpoint.isBlank()) errors.add("Endpoint cannot be empty.");
+        if (usersCount <= 1) errors.add("UsersCount must be an integer greater than 1.");
+        if (threadsPerUser <= 0) errors.add("ThreadsPerUser must be > 0.");
+        if (maxConnections <= 0) errors.add("MaxConnections must be > 0.");
+        if (socketTimeoutMs <= 0) errors.add("SocketTimeoutMs must be > 0.");
+        if (connectionTimeoutMs <= 0) errors.add("ConnectionTimeoutMs must be > 0.");
+        if (!ALLOWED_PROTOCOLS.contains(protocol.toLowerCase())) {
+            errors.add("Protocol must be 'http' or 'https' (Current: " + protocol + ").");
         }
-        if (threadsPerUser <= 0) {
-            throw new IllegalArgumentException("ThreadsPerUser must be > 0");
+        if (!ALLOWED_LOG_LEVELS.contains(logLevel.toUpperCase())) {
+            errors.add("LogLevel must be one of DEBUG, INFO, CONFIG, WARN, ERROR (Current: " + logLevel + ").");
+        }
+        if (isEmpty(bucketNameFixed) && isEmpty(bucketNamePrefix)) {
+            errors.add("Either BucketNameFixed or BucketNamePrefix must be specified.");
         }
 
-        // 2. Connection Pool Safety Validation: Prevent Worker starvation
-        int totalThreads = usersCount * threadsPerUser;
-        if (maxConnections < totalThreads) {
-            System.err.printf("[WARN] Config Risk: MaxConnections (%d) is less than total concurrent threads (%d). " +
-                    "This may cause significant blocking. Please increase MaxConnections!\n", maxConnections, totalThreads);
+        // 2. Mock Parameters Check
+        if (isMockMode) {
+            if (mockLatencyMs < 0) errors.add("MockLatencyMs must be >= 0.");
+            if (mockErrorRate < 0 || mockErrorRate > 10000) errors.add("MockErrorRate must be between 0 and 10000.");
         }
 
-        // 3. Mixed Mode Validation
-        if (testCaseCode == 900 && mixLoopCount <= 0) {
-            throw new IllegalArgumentException("MixLoopCount must be a positive integer (> 0) when TestCaseCode is 900");
+        // 3. TestCase-Specific Requirements
+        validateTestCase(testCaseCode, errors);
+
+        // 4. MixMode (900) Recursive Validation
+        if (testCaseCode == 900) {
+            if (mixOperations == null || mixOperations.length == 0) {
+                errors.add("MixMode (900) requires 'MixOperation' to be configured.");
+            } else {
+                for (int op : mixOperations) {
+                    validateTestCase(op, errors);
+                }
+                if (mixLoopCount <= 0) errors.add("MixLoopCount must be > 0 for MixMode (900).");
+            }
         }
 
-        // 4. Exit Condition Validation
-        if (runSeconds == 0) {
-             System.out.println("[INFO] RunSeconds is empty. Benchmark will run until each thread completes " + requestsPerThread + " requests.");
+        // 5. Connection Pool Safety Warning
+        if (maxConnections < getTotalThreads()) {
+             System.err.printf("[WARN] Config Risk: MaxConnections (%d) is less than total concurrent threads (%d).\n", 
+                               maxConnections, getTotalThreads());
         }
 
-        // 5. Multipart Parameter Validation
-        if (testCaseCode == 216 && partsForEachUploadID <= 0) {
-             throw new IllegalArgumentException("PartsForEachUploadID must be a positive integer (> 0) when TestCaseCode is 216 (Multipart Upload)");
+        if (!errors.isEmpty()) {
+            StringBuilder sb = new StringBuilder("\n[Configuration Error] The following parameters are invalid:\n");
+            for (int i = 0; i < errors.size(); i++) {
+                sb.append(i + 1).append(". ").append(errors.get(i)).append("\n");
+            }
+            sb.append("\nPlease fix config.dat and try again.\n");
+            throw new IllegalArgumentException(sb.toString());
+        }
+    }
+
+    private void validateTestCase(int code, java.util.List<String> errors) {
+        if (isObjectOperation(code)) {
+            if (isEmpty(objectNameFixed) && isEmpty(keyPrefix)) {
+                errors.add(String.format("TestCase %d requires either ObjectNameFixed or KeyPrefix.", code));
+            }
+            if (objNamePatternHash == null) {
+                errors.add(String.format("TestCase %d requires 'ObjNamePatternHash' to be explicitly configured.", code));
+            }
+            if (code != 204 && enableDataValidation == null) {
+                errors.add(String.format("TestCase %d requires 'EnableDataValidation' to be explicitly configured.", code));
+            }
+        }
+
+        switch (code) {
+            case 101:
+                if (isEmpty(bucketLocation)) errors.add("BucketLocation must be specified for TestCase 101.");
+                break;
+            case 201:
+                if (objectSizeMin <= 0 || objectSizeMax <= 0) errors.add("ObjectSize must be > 0 for PutObject (201).");
+                if (objectSizeMin > objectSizeMax) errors.add("ObjectSizeMin cannot be greater than ObjectSizeMax.");
+                break;
+            case 216:
+                checkFile(uploadFilePath, errors, "Multipart (216)");
+                if (partSize < 5242880) errors.add("PartSize must be at least 5242880 (5MB) for Multipart (216).");
+                if (partsForEachUploadID <= 0) errors.add("PartsForEachUploadID must be > 0 for Multipart (216).");
+                break;
+            case 230:
+                checkFile(uploadFilePath, errors, "Resumable (230)");
+                if (partSize < 5242880) errors.add("PartSize must be at least 5242880 (5MB) for Resumable (230).");
+                if (resumableThreads != null && resumableThreads <= 0) errors.add("ResumableThreads must be > 0 for Resumable (230).");
+                break;
+        }
+    }
+
+    private boolean isObjectOperation(int code) {
+        return code == 201 || code == 202 || code == 204 || code == 216 || code == 230;
+    }
+
+    private boolean isEmpty(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    private void checkFile(String path, java.util.List<String> errors, String context) {
+        if (isEmpty(path)) {
+            errors.add("UploadFilePath is not specified for " + context + ".");
+            return;
+        }
+        java.io.File f = new java.io.File(path);
+        if (!f.exists()) {
+            errors.add("UploadFilePath '" + path + "' does not exist for " + context + ".");
+        } else if (!f.isFile()) {
+            errors.add("UploadFilePath '" + path + "' is not a file.");
         }
     }
 
