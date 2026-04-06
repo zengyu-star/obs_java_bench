@@ -52,9 +52,9 @@ public class ConfigValidator {
             errors.add("Endpoint cannot be empty.");
         }
         
-        // UsersCount > 1
-        if (config.usersCount() <= 1) {
-            errors.add("UsersCount must be an integer greater than 1.");
+        // UsersCount > 0
+        if (config.usersCount() <= 0) {
+            errors.add("UsersCount must be an integer greater than 0.");
         }
         
         // UsersCount <= lines in users.dat

@@ -21,8 +21,8 @@ public class ConfigLoader {
      */
     public static BenchConfig loadConfig(String configPath) {
         Properties props = new Properties();
-        try (FileInputStream in = new FileInputStream(configPath)) {
-            props.load(in);
+        try (java.io.Reader reader = new java.io.InputStreamReader(new FileInputStream(configPath), java.nio.charset.StandardCharsets.UTF_8)) {
+            props.load(reader);
         } catch (IOException e) {
             throw new RuntimeException("[Fatal] Cannot read configuration file: " + configPath + ". Please check if it exists!", e);
         }
@@ -57,8 +57,8 @@ public class ConfigLoader {
             long partSize = Long.parseLong(props.getProperty("PartSize", "5242880"));
             int partsForEachUploadID = Integer.parseInt(props.getProperty("PartsForEachUploadID", "1"));
             Integer resumableThreads = parseIntegerOrNull(props.getProperty("ResumableThreads", ""));
-            Boolean objNamePatternHash = parseBooleanOrNull(props.getProperty("ObjNamePatternHash", null));
-            Boolean enableDataValidation = parseBooleanOrNull(props.getProperty("EnableDataValidation", null));
+            Boolean objNamePatternHash = parseBooleanOrNull(props.getProperty("ObjNamePatternHash", "false"));
+            Boolean enableDataValidation = parseBooleanOrNull(props.getProperty("EnableDataValidation", "false"));
             boolean enableDetailLog = Boolean.parseBoolean(props.getProperty("EnableDetailLog", "false"));
             boolean isMockMode = Boolean.parseBoolean(props.getProperty("IsMockMode", "false"));
             long mockLatencyMs = Long.parseLong(props.getProperty("MockLatencyMs", "20"));
@@ -69,6 +69,8 @@ public class ConfigLoader {
             int[] mixOperations = parseMixOperations(props.getProperty("MixOperation", ""));
             long mixLoopCount = parseLongOrDefault(props.getProperty("MixLoopCount", ""), 0);
 
+            // System.out.println("[DEBUG] Variables: endpoint=" + endpoint + ", usersCount=" + usersCount + ", isTemporaryToken=" + isTemporaryToken);
+            // System.out.printf("[DEBUG] PARSED: ...\n");
             return new BenchConfig(
                 endpoint, protocol, isTemporaryToken, logLevel, bucketLocation,
                 maxConnections, socketTimeoutMs, connectionTimeoutMs,

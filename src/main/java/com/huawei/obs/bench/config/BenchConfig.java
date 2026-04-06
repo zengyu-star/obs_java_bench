@@ -79,60 +79,7 @@ public record BenchConfig(
      * Aligns with Directive 6 of .cursorrules.
      */
     public BenchConfig {
-        java.util.List<String> errors = new java.util.ArrayList<>();
-
-        // 1. Global Requirements
-        if (endpoint == null || endpoint.isBlank()) errors.add("Endpoint cannot be empty.");
-        if (usersCount <= 1) errors.add("UsersCount must be an integer greater than 1.");
-        if (threadsPerUser <= 0) errors.add("ThreadsPerUser must be > 0.");
-        if (maxConnections <= 0) errors.add("MaxConnections must be > 0.");
-        if (socketTimeoutMs <= 0) errors.add("SocketTimeoutMs must be > 0.");
-        if (connectionTimeoutMs <= 0) errors.add("ConnectionTimeoutMs must be > 0.");
-        if (!ALLOWED_PROTOCOLS.contains(protocol.toLowerCase())) {
-            errors.add("Protocol must be 'http' or 'https' (Current: " + protocol + ").");
-        }
-        if (!ALLOWED_LOG_LEVELS.contains(logLevel.toUpperCase())) {
-            errors.add("LogLevel must be one of DEBUG, INFO, CONFIG, WARN, ERROR (Current: " + logLevel + ").");
-        }
-        if (isEmpty(bucketNameFixed) && isEmpty(bucketNamePrefix)) {
-            errors.add("Either BucketNameFixed or BucketNamePrefix must be specified.");
-        }
-
-        // 2. Mock Parameters Check
-        if (isMockMode) {
-            if (mockLatencyMs < 0) errors.add("MockLatencyMs must be >= 0.");
-            if (mockErrorRate < 0 || mockErrorRate > 10000) errors.add("MockErrorRate must be between 0 and 10000.");
-        }
-
-        // 3. TestCase-Specific Requirements
-        validateTestCase(testCaseCode, errors);
-
-        // 4. MixMode (900) Recursive Validation
-        if (testCaseCode == 900) {
-            if (mixOperations == null || mixOperations.length == 0) {
-                errors.add("MixMode (900) requires 'MixOperation' to be configured.");
-            } else {
-                for (int op : mixOperations) {
-                    validateTestCase(op, errors);
-                }
-                if (mixLoopCount <= 0) errors.add("MixLoopCount must be > 0 for MixMode (900).");
-            }
-        }
-
-        // 5. Connection Pool Safety Warning
-        if (maxConnections < getTotalThreads()) {
-             System.err.printf("[WARN] Config Risk: MaxConnections (%d) is less than total concurrent threads (%d).\n", 
-                               maxConnections, getTotalThreads());
-        }
-
-        if (!errors.isEmpty()) {
-            StringBuilder sb = new StringBuilder("\n[Configuration Error] The following parameters are invalid:\n");
-            for (int i = 0; i < errors.size(); i++) {
-                sb.append(i + 1).append(". ").append(errors.get(i)).append("\n");
-            }
-            sb.append("\nPlease fix config.dat and try again.\n");
-            throw new IllegalArgumentException(sb.toString());
-        }
+        // Validation moved to ConfigValidator to resolve record constructor mystery.
     }
 
     private void validateTestCase(int code, java.util.List<String> errors) {

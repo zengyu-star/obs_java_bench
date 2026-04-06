@@ -82,11 +82,13 @@ public class Bootstrap {
             LogUtil.info("MAIN", "Loading configuration...");
             BenchConfig config = ConfigLoader.loadConfig(configPath);
             LogUtil.setLogLevel(config.logLevel());
-            
             if (testCaseCodeOverride != null) {
                 LogUtil.info("MAIN", "CLI Override detected! Using TestCaseCode: " + testCaseCodeOverride);
                 config = config.withTestCaseCode(testCaseCodeOverride);
             }
+
+            // [Fix]: Validate AFTER all overrides are applied
+            ConfigValidator.validate(config, usersPath);
 
             // [Logging]: ResumableThreads Summary
             int cpuCores = Runtime.getRuntime().availableProcessors();
@@ -114,25 +116,31 @@ public class Bootstrap {
 
             List<UserCredential> users;
             if (config.isTemporaryToken()) {
-                LogUtil.info("MAIN", "IsTemporaryToken enabled. Fetching STS tokens for " + config.usersCount() + " users...");
-
-                ProcessBuilder pb = new ProcessBuilder("python3", "generate_temp_ak_sk.py", String.valueOf(config.usersCount()));
-                pb.inheritIO();
-                Process p = pb.start();
-                int exitCode = p.waitFor();
-
-                if (exitCode != 0) {
-                    throw new RuntimeException("FATAL: Failed to generate temporary credentials. Python script exited with code " + exitCode);
-                }
-
                 File tempTokenFile = new File("temptoken.dat");
                 if (!tempTokenFile.exists()) {
                     tempTokenFile = new File(new File(usersPath).getParentFile(), "temptoken.dat");
                 }
-                if (!tempTokenFile.exists()) {
-                    throw new RuntimeException("FATAL: temptoken.dat not generated.");
+
+                if (tempTokenFile.exists()) {
+                    LogUtil.info("MAIN", "IsTemporaryToken enabled. Found existing temptoken.dat, skipping generation.");
+                    users = ConfigLoader.loadUsers(tempTokenFile.getAbsolutePath(), config.usersCount());
+                } else {
+                    LogUtil.info("MAIN", "IsTemporaryToken enabled. Fetching STS tokens for " + config.usersCount() + " users...");
+
+                    ProcessBuilder pb = new ProcessBuilder("python3", "generate_temp_ak_sk.py", String.valueOf(config.usersCount()));
+                    pb.inheritIO();
+                    Process p = pb.start();
+                    int exitCode = p.waitFor();
+
+                    if (exitCode != 0) {
+                        throw new RuntimeException("FATAL: Failed to generate temporary credentials. Python script exited with code " + exitCode);
+                    }
+
+                    if (!tempTokenFile.exists()) {
+                        throw new RuntimeException("FATAL: temptoken.dat not generated.");
+                    }
+                    users = ConfigLoader.loadUsers(tempTokenFile.getAbsolutePath(), config.usersCount());
                 }
-                users = ConfigLoader.loadUsers(tempTokenFile.getAbsolutePath(), config.usersCount());
             } else {
                 users = ConfigLoader.loadUsers(usersPath, config.usersCount());
             }
