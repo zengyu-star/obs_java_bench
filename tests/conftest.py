@@ -73,7 +73,17 @@ def write_users(path, users):
         for u in users:
             f.write(",".join(u) + "\n")
 
-USER_FIX = [
-    ["user1", "HPUAWMCGKM4JWJDYQIPI", "rywgBpUWpn1NKCwUvgkjKdGhVvkUcaLEoc2pxyWg"],
-    ["user2", "HPUAFBJJALOPISAKZ1MZ", "dEqroYEKK4kXzdw3UO9wF6sw9y5bUkM07SlLXBiq"]
-]
+def load_fixed_users():
+    users = []
+    # Try to find users.dat_fix_ak_sk in the project root
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    path = os.path.join(project_root, "users.dat_fix_ak_sk")
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and "," in line and not line.startswith("#"):
+                    users.append(line.split(","))
+    return users
+
+USER_FIX = load_fixed_users()
