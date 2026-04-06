@@ -54,6 +54,8 @@ public record BenchConfig(
     Boolean enableDataValidation, // Whether to enable LCG zero-copy validation
     boolean enableDetailLog,      // Whether to enable asynchronous detail logging
     boolean isMockMode,           // Whether to enable offline Mock mode
+    long mockLatencyMs,           // Mock average network latency (ms)
+    int mockErrorRate,            // Mock error rate (per 10,000)
     boolean enableCheckpoint,     // Whether to enable resumable checkpoints
 
     // ==========================================
@@ -118,7 +120,7 @@ public record BenchConfig(
             usersCount, threadsPerUser, runSeconds, requestsPerThread,
             code, // The override
             bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
-            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
+            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, mockLatencyMs, mockErrorRate, enableCheckpoint,
             mixOperations, mixLoopCount, partsForEachUploadID, resumableThreads
         );
     }
@@ -131,7 +133,7 @@ public record BenchConfig(
             testCaseCode,
             bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, newPath, // The override
             objectSizeMin, objectSizeMax, partSize,
-            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
+            objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, mockLatencyMs, mockErrorRate, enableCheckpoint,
             mixOperations, mixLoopCount, partsForEachUploadID, resumableThreads
         );
     }

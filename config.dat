@@ -73,3 +73,7 @@ EnableDetailLog=true
 EnableCheckpoint=true
 # Whether to enable offline Mock mode (true means no real network requests)
 IsMockMode=false
+# Mock average network latency (milliseconds)
+MockLatencyMs=20
+# Mock error rate (per 10,000, e.g., 50 means 0.5% error rate)
+MockErrorRate=10

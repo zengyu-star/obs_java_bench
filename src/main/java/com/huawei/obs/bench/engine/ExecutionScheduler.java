@@ -121,8 +121,8 @@ public class ExecutionScheduler {
         IObsClientAdapter adapter;
         
         if (config.isMockMode()) {
-            // Mock Mode: Simulate 20ms network latency and small error rate
-            adapter = new MockObsAdapter(20, 10); 
+            // Mock Mode: Use configured network latency and error rate
+            adapter = new MockObsAdapter(config); 
         } else {
             // Real Mode: Get dedicated ObsClient for this user
             adapter = new RealObsAdapter(clientManager.getClient(user.username()));

@@ -1,5 +1,6 @@
 package com.huawei.obs.bench.adapter;
 
+import com.huawei.obs.bench.config.BenchConfig;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
@@ -10,19 +11,16 @@ import java.util.concurrent.locks.LockSupport;
  */
 public class MockObsAdapter implements IObsClientAdapter {
 
+    private final BenchConfig config;
     private final long avgLatencyMs;
     private final int errorRateTenThousandths;
     
     private final ThreadLocal<Long> lastRequestBytes = ThreadLocal.withInitial(() -> 0L);
 
-    /**
-     * Construct Mock Adapter
-     * @param avgLatencyMs Simulated average network latency (ms)
-     * @param errorRateTenThousandths Simulated server-side error rate (unit: 1/10000)
-     */
-    public MockObsAdapter(long avgLatencyMs, int errorRateTenThousandths) {
-        this.avgLatencyMs = avgLatencyMs;
-        this.errorRateTenThousandths = errorRateTenThousandths;
+    public MockObsAdapter(BenchConfig config) {
+        this.config = config;
+        this.avgLatencyMs = config.mockLatencyMs();
+        this.errorRateTenThousandths = config.mockErrorRate();
     }
 
     @Override
@@ -38,7 +36,6 @@ public class MockObsAdapter implements IObsClientAdapter {
     public int deleteBucket(String bucketName) {
         simulateNetworkLatency();
         lastRequestBytes.set(0L);
-        // Simple mock: Always success (204)
         return 204;
     }
 
@@ -53,7 +50,6 @@ public class MockObsAdapter implements IObsClientAdapter {
     public int getObject(String bucketName, String objectKey, String range, ByteBuffer expectedPattern, ByteBuffer receiveBuffer) {
         simulateNetworkLatency();
         lastRequestBytes.set(receiveBuffer != null ? (long) receiveBuffer.capacity() : 0L);
-        // For Range downloads, success code is usually 206
         return simulateStatusCode(range == null ? 200 : 206);
     }
 
@@ -61,12 +57,12 @@ public class MockObsAdapter implements IObsClientAdapter {
     public int deleteObject(String bucketName, String objectKey) {
         simulateNetworkLatency();
         lastRequestBytes.set(0L);
-        return simulateStatusCode(204); // Success for Delete usually returns 204 No Content
+        return simulateStatusCode(204);
     }
 
     @Override
     public int multipartUpload(String bucketName, String objectKey, ByteBuffer payload, int partCount, long partSize) {
-        // Simulate latency for multiple interactions in multipart upload
+        // Multi-part simulation: Simulate latency for each part interaction
         for (int i = 0; i < partCount; i++) {
             simulateNetworkLatency();
         }
@@ -76,44 +72,38 @@ public class MockObsAdapter implements IObsClientAdapter {
 
     @Override
     public int resumableUpload(String bucketName, String objectKey, String filePath, int taskNum, long partSize, boolean enableCheckpoint) {
-        simulateNetworkLatency();
-        lastRequestBytes.set(0L); // Mock implementation doesn't accurately know file size
+        // Estimate part count for more realistic multi-part simulation
+        long fileSize = config.objectSizeMax() > 0 ? config.objectSizeMax() : 100 * 1024 * 1024L; // Default 100MB if unknown
+        int estimatedParts = (int) Math.ceil((double) fileSize / Math.max(1, partSize));
+        
+        // Parallel simulation: For resumable upload, tasks run in parallel.
+        // We simulate the bottleneck latency for multiple tasks.
+        int loops = (int) Math.ceil((double) estimatedParts / Math.max(1, taskNum));
+        for (int i = 0; i < loops; i++) {
+            simulateNetworkLatency();
+        }
+        
+        lastRequestBytes.set(fileSize);
         return simulateStatusCode(200);
     }
 
-    /**
-     * Simulate network latency
-     * Architect's note: Use LockSupport.parkNanos instead of Thread.sleep.
-     * parkNanos does not throw InterruptedException, has higher precision, and is friendlier to system scheduling.
-     */
     private void simulateNetworkLatency() {
         if (avgLatencyMs <= 0) return;
-
-        // Generate random jitter (±20%) to simulate real network fluctuations
         double jitterFactor = 0.8 + (ThreadLocalRandom.current().nextDouble() * 0.4);
         long sleepNanos = (long) (avgLatencyMs * jitterFactor * 1_000_000L);
-        
         LockSupport.parkNanos(sleepNanos);
     }
 
-    /**
-     * Simulate HTTP Status Code distribution
-     * Used to verify if MonitorService correctly tracks 403/404/5xx anomalies
-     */
     private int simulateStatusCode(int successCode) {
         if (errorRateTenThousandths <= 0) return successCode;
-
         int rand = ThreadLocalRandom.current().nextInt(10000);
-        if (rand >= errorRateTenThousandths) {
-            return successCode;
-        }
+        if (rand >= errorRateTenThousandths) return successCode;
 
-        // Randomly assign error types
         int errorType = rand % 3;
         return switch (errorType) {
-            case 0 -> 403; // AccessDenied
-            case 1 -> 404; // NoSuchKey
-            default -> 500; // InternalError
+            case 0 -> 403;
+            case 1 -> 404;
+            default -> 500;
         };
     }
 

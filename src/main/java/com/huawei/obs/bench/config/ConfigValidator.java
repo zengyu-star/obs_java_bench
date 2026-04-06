@@ -76,6 +76,16 @@ public class ConfigValidator {
         if (config.connectionTimeoutMs() <= 0) {
             errors.add("ConnectionTimeoutMs must be > 0.");
         }
+        
+        // Mock Parameters Check
+        if (config.isMockMode()) {
+            if (config.mockLatencyMs() < 0) {
+                errors.add("MockLatencyMs must be >= 0.");
+            }
+            if (config.mockErrorRate() < 0 || config.mockErrorRate() > 10000) {
+                errors.add("MockErrorRate must be between 0 and 10000.");
+            }
+        }
 
         // Protocol Check
         if (!ALLOWED_PROTOCOLS.contains(config.protocol().toLowerCase())) {

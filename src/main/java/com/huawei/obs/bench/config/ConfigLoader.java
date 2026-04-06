@@ -61,6 +61,8 @@ public class ConfigLoader {
             Boolean enableDataValidation = parseBooleanOrNull(props.getProperty("EnableDataValidation", null));
             boolean enableDetailLog = Boolean.parseBoolean(props.getProperty("EnableDetailLog", "false"));
             boolean isMockMode = Boolean.parseBoolean(props.getProperty("IsMockMode", "false"));
+            long mockLatencyMs = Long.parseLong(props.getProperty("MockLatencyMs", "20"));
+            int mockErrorRate = Integer.parseInt(props.getProperty("MockErrorRate", "10"));
             boolean enableCheckpoint = Boolean.parseBoolean(props.getProperty("EnableCheckpoint", "true"));
 
             // Parse Mixed Mode 900 fields
@@ -73,7 +75,7 @@ public class ConfigLoader {
                 usersCount, threadsPerUser, runSeconds, requestsPerThread,
                 testCaseCode,
                 bucketNameFixed, bucketNamePrefix, objectNameFixed, keyPrefix, uploadFilePath, objectSizeMin, objectSizeMax, partSize,
-                objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, enableCheckpoint,
+                objNamePatternHash, enableDataValidation, enableDetailLog, isMockMode, mockLatencyMs, mockErrorRate, enableCheckpoint,
                 mixOperations, mixLoopCount, partsForEachUploadID, resumableThreads
             );
         } catch (NumberFormatException e) {
