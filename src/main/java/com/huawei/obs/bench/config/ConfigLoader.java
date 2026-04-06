@@ -57,9 +57,8 @@ public class ConfigLoader {
             long partSize = Long.parseLong(props.getProperty("PartSize", "5242880"));
             int partsForEachUploadID = Integer.parseInt(props.getProperty("PartsForEachUploadID", "1"));
             Integer resumableThreads = parseIntegerOrNull(props.getProperty("ResumableThreads", ""));
-
-            boolean objNamePatternHash = Boolean.parseBoolean(props.getProperty("ObjNamePatternHash", "true"));
-            boolean enableDataValidation = Boolean.parseBoolean(props.getProperty("EnableDataValidation", "false"));
+            Boolean objNamePatternHash = parseBooleanOrNull(props.getProperty("ObjNamePatternHash", null));
+            Boolean enableDataValidation = parseBooleanOrNull(props.getProperty("EnableDataValidation", null));
             boolean enableDetailLog = Boolean.parseBoolean(props.getProperty("EnableDetailLog", "false"));
             boolean isMockMode = Boolean.parseBoolean(props.getProperty("IsMockMode", "false"));
             boolean enableCheckpoint = Boolean.parseBoolean(props.getProperty("EnableCheckpoint", "true"));
@@ -141,6 +140,13 @@ public class ConfigLoader {
         } catch (NumberFormatException e) {
             return -1; // Use -1 to indicate invalid format, will be validated in Bootstrap
         }
+    }
+
+    private static Boolean parseBooleanOrNull(String raw) {
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        return Boolean.parseBoolean(raw.trim());
     }
 
     /**

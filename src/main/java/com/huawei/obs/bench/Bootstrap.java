@@ -2,6 +2,7 @@ package com.huawei.obs.bench;
 
 import com.huawei.obs.bench.config.BenchConfig;
 import com.huawei.obs.bench.config.ConfigLoader;
+import com.huawei.obs.bench.config.ConfigValidator;
 import com.huawei.obs.bench.config.ObsClientManager;
 import com.huawei.obs.bench.config.UserCredential;
 import com.huawei.obs.bench.engine.ExecutionScheduler;
@@ -82,25 +83,25 @@ public class Bootstrap {
             BenchConfig config = ConfigLoader.loadConfig(configPath);
             LogUtil.setLogLevel(config.logLevel());
             
+            // [Architect Optimization]: Perform fool-proof configuration validation
+            ConfigValidator.validate(config, usersPath);
+            
             if (testCaseCodeOverride != null) {
                 LogUtil.info("MAIN", "CLI Override detected! Using TestCaseCode: " + testCaseCodeOverride);
                 config = config.withTestCaseCode(testCaseCodeOverride);
             }
 
-            // [Validation]: ResumableThreads checks
+            // [Logging]: ResumableThreads Summary
             int cpuCores = Runtime.getRuntime().availableProcessors();
             if (config.resumableThreads() != null) {
-                if (config.resumableThreads() < 0) {
-                    throw new IllegalArgumentException("[Fatal] ResumableThreads format error! It must be empty or a positive integer.");
-                }
-                if (config.resumableThreads() > cpuCores) {
-                    throw new IllegalArgumentException(String.format(
-                        "[Fatal] ResumableThreads (%d) exceeds the number of CPU cores (%d). Please reduce the value!",
+                if (config.resumableThreads() > cpuCores * 2) {
+                    LogUtil.warn("MAIN", String.format(
+                        "ResumableThreads (%d) is quite high (CPU cores: %d). Ensure your network and memory can handle it.",
                         config.resumableThreads(), cpuCores));
                 }
-                LogUtil.config("Resumable Internal Threads: " + config.resumableThreads());
+                LogUtil.config("Resumable Global Shared Threads: " + config.resumableThreads());
             } else {
-                LogUtil.config("Resumable Internal Threads: " + cpuCores + " (Auto-detected)");
+                LogUtil.config("Resumable Global Shared Threads: " + cpuCores + " (Auto-detected)");
             }
 
             // C-style Config Summary

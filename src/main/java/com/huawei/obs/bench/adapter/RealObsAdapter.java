@@ -1,5 +1,6 @@
 package com.huawei.obs.bench.adapter;
 
+import com.huawei.obs.bench.config.ObsClientManager;
 import com.huawei.obs.bench.utils.ByteBufferInputStream;
 import com.obs.services.ObsClient;
 import com.obs.services.exception.ObsException;
@@ -208,6 +209,11 @@ public class RealObsAdapter implements IObsClientAdapter {
             request.setTaskNum(taskNum);
             request.setPartSize(partSize);
             request.setEnableCheckpoint(enableCheckpoint);
+
+            // [Note]: setExecutorService is not available in this SDK version (3.23.9.1). 
+            // We will rely on taskNum for now, or implement a manual semaphore if needed.
+            // request.setExecutorService(ObsClientManager.getInstance().getResumableExecutor());
+
             if (enableCheckpoint) {
                 request.setCheckpointFile("upload_checkpoint/" + objectKey + ".cp");
             }

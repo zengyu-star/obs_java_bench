@@ -50,8 +50,8 @@ public record BenchConfig(
     // ==========================================
     // 6. Advanced Architectural Features
     // ==========================================
-    boolean objNamePatternHash,   // Whether to enable consistent hash scattering
-    boolean enableDataValidation, // Whether to enable LCG zero-copy validation
+    Boolean objNamePatternHash,   // Whether to enable consistent hash scattering
+    Boolean enableDataValidation, // Whether to enable LCG zero-copy validation
     boolean enableDetailLog,      // Whether to enable asynchronous detail logging
     boolean isMockMode,           // Whether to enable offline Mock mode
     boolean enableCheckpoint,     // Whether to enable resumable checkpoints

@@ -7,6 +7,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * OBS Client Manager (Control Plane - Singleton)
@@ -18,6 +21,9 @@ public class ObsClientManager {
 
     // Client pool: Key is username, supporting multi-tenant concurrent benchmarking
     private final Map<String, ObsClient> clientPool = new ConcurrentHashMap<>();
+
+    // [New]: Global shared thread pool for resumable upload tasks (Case 230)
+    private ExecutorService resumableExecutor;
 
     private ObsClientManager() {
     }
@@ -69,7 +75,25 @@ public class ObsClientManager {
                 throw new RuntimeException("ObsClient initialization failed", e);
             }
         }
-        System.out.println("[ObsClientManager] Client pool initialization complete.");
+
+        // 3. Initialize Shared Resumable Thread Pool (Global architecture optimization)
+        int poolSize = config.resumableThreads() != null ? config.resumableThreads() : Runtime.getRuntime().availableProcessors();
+        this.resumableExecutor = Executors.newFixedThreadPool(poolSize, r -> {
+            Thread t = new Thread(r);
+            t.setName("OBS-Resumable-Global-" + t.getId());
+            t.setDaemon(true);
+            return t;
+        });
+
+        System.out.printf("[ObsClientManager] Initialization complete. (Client Pool: %d, Resumable Global Pool: %d)\n", 
+                          users.size(), poolSize);
+    }
+
+    /**
+     * Get the shared global executor for resumable uploads
+     */
+    public ExecutorService getResumableExecutor() {
+        return resumableExecutor;
     }
 
     /**
@@ -98,6 +122,20 @@ public class ObsClientManager {
             }
         });
         clientPool.clear();
+        
+        if (resumableExecutor != null) {
+            System.out.println("[ObsClientManager] Shutting down Resumable Global Thread Pool...");
+            resumableExecutor.shutdown();
+            try {
+                if (!resumableExecutor.awaitTermination(3, TimeUnit.SECONDS)) {
+                    resumableExecutor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                resumableExecutor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        
         System.out.println("[ObsClientManager] Resources fully released.");
     }
 }
