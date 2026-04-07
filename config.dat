@@ -35,8 +35,8 @@ TestCaseCode=230
 # Mixed Workload Configuration (Active only if TestCaseCode=900)
 # MixOperation: List of operations involved in the mix, comma-separated
 MixOperation=201,202,204
-# MixLoopCount: Number of execution loops (0 means governed by global duration/request limits)
-MixLoopCount=0
+# MixLoopCount: Number of execution loops (Must be an integer greater than 0 for MixMode 900)
+MixLoopCount=10
 
 # [5. Object & Data Attributes]
 # Fixed Bucket Name (Highest priority, shared by all tenants if configured)
@@ -44,7 +44,7 @@ BucketNameFixed=zengyu-test
 # Dynamic Bucket Name Prefix (Effective if BucketNameFixed is empty, format: ak.prefix)
 BucketNamePrefix=
 # Bucket Location (Used for TestCase 101, e.g., cn-north-4)
-BucketLocation=cn-north-4
+BucketLocation=ap-southeast-1
 # [Object Key Attributes]
 # Fixed Object Name (Highest priority, all requests use this if configured)
 ObjectNameFixed=
