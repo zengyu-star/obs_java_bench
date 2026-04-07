@@ -21,11 +21,12 @@ TEST_DATA_SIZE_MB = 10           # 测试数据大小 (MB)
 TEST_CASES = [101, 201, 202, 204, 216, 230, 900]
 TEST_DURATION = 3 # 冒烟测试运行时间 (秒)
 
-# 编译与测试任务: (显示名称, 构建命令, 产物路径, 是否 Mock 模式)
-# Java 只有一个产物，但我们通过配置切换 Mock 和 Standard 路径进行验证
+# 编译与测试任务: (显示名称, 构建命令, 产物路径, 是否 Mock 模式, 是否 STS 模式, 用户文件)
+# Java 只有一个产物，但我们通过配置切换模式路径进行验证
 TASKS = [
-    ("Mock",     "mvn clean package -DskipTests", "target/obs_java_bench-1.0.0-SNAPSHOT.jar", True),
-    ("Standard", "%SAME%",                         "target/obs_java_bench-1.0.0-SNAPSHOT.jar", False)
+    ("Mock",     "mvn clean package -DskipTests", "target/obs_java_bench-1.0.0-SNAPSHOT.jar", True,  False, USERS_FILE),
+    ("Standard", "%SAME%",                         "target/obs_java_bench-1.0.0-SNAPSHOT.jar", False, False, USERS_FILE),
+    ("STS",      "%SAME%",                         "target/obs_java_bench-1.0.0-SNAPSHOT.jar", False, True,  "users.dat_tmp")
 ]
 # ===========================================
 
@@ -69,6 +70,7 @@ class JavaBenchmarkTester:
             with open(CONFIG_FILE, 'w') as f:
                 f.write("Endpoint=obs.example.com\n")
                 f.write("Protocol=http\n")
+                f.write("IsTemporaryToken=false\n")
                 f.write("BucketLocation=cn-north-4\n")
                 f.write("BucketNamePrefix=bench-smoke\n")
                 f.write("KeyPrefix=smoke-test-object\n")
@@ -87,6 +89,7 @@ class JavaBenchmarkTester:
             "EnableDetailLog": "false",
             "EnableDataValidation": "true",
             "ObjNamePatternHash": "false",
+            "IsTemporaryToken": "false",
             "MockErrorRate": "0"
         }
         for key, val in mandatory_fields.items():
@@ -124,7 +127,7 @@ class JavaBenchmarkTester:
 
     def compile(self):
         """编译单一 JAR 产物 (只执行一次即可)"""
-        name, cmd, jar_path, _ = TASKS[0]
+        name, cmd, jar_path, *others = TASKS[0]
         print(f"\n>>> Compiling Build: {name} ...", end='', flush=True)
         start_t = time.time()
         ret, output = self.run_cmd(cmd)
@@ -163,8 +166,8 @@ class JavaBenchmarkTester:
         # 101 (Create) -> Others -> 104 (Delete)
         CORE_TESTS = [201, 202, 204, 216, 230, 900]
         
-        for name, _, _, is_mock in TASKS:
-            print(f"\n--- Testing Scenario: {name} (IsMockMode={is_mock}) ---")
+        for name, _, _, is_mock, is_sts, user_file in TASKS:
+            print(f"\n--- Testing Scenario: {name} (IsMock={is_mock}, IsSTS={is_sts}, UserFile={user_file}) ---")
             
             # 生成带时间戳的固定桶名
             timestamp = int(time.time())
@@ -172,8 +175,10 @@ class JavaBenchmarkTester:
             
             # 动态修改配置文件
             mock_val = "true" if is_mock else "false"
+            sts_val = "true" if is_sts else "false"
             sed_cmds = [
                 f"sed -i 's/^IsMockMode=.*/IsMockMode={mock_val}/g' {CONFIG_FILE}",
+                f"sed -i 's/^IsTemporaryToken=.*/IsTemporaryToken={sts_val}/g' {CONFIG_FILE}",
                 f"sed -i 's/^RunSeconds=.*/RunSeconds={TEST_DURATION}/g' {CONFIG_FILE}",
                 f"sed -i 's/^MockErrorRate=.*/MockErrorRate=0/g' {CONFIG_FILE}",
                 f"sed -i 's/^BucketNameFixed=.*/BucketNameFixed={fixed_bucket}/g' {CONFIG_FILE}",
@@ -193,7 +198,7 @@ class JavaBenchmarkTester:
                 
                 start_t = time.time()
                 # 命令格式: java -jar app.jar [config] [users] [TestCaseCode]
-                ret, output = self.run_cmd(f"java -jar {jar_path} {CONFIG_FILE} {USERS_FILE} {case}")
+                ret, output = self.run_cmd(f"java -jar {jar_path} {CONFIG_FILE} {user_file} {case}")
                 duration = time.time() - start_t
                 
                 stats = self.parse_stats(output)

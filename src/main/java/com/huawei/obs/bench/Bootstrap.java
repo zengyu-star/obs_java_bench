@@ -116,16 +116,13 @@ public class Bootstrap {
 
             List<UserCredential> users;
             if (config.isTemporaryToken()) {
-                File tempTokenFile = new File("temptoken.dat");
-                if (!tempTokenFile.exists()) {
-                    tempTokenFile = new File(new File(usersPath).getParentFile(), "temptoken.dat");
-                }
-
+                File tempTokenFile = new File(usersPath);
+                
                 if (tempTokenFile.exists()) {
-                    LogUtil.info("MAIN", "IsTemporaryToken enabled. Found existing temptoken.dat, skipping generation.");
+                    LogUtil.info("MAIN", "IsTemporaryToken enabled. Using credentials from: " + usersPath);
                     users = ConfigLoader.loadUsers(tempTokenFile.getAbsolutePath(), config.usersCount());
                 } else {
-                    LogUtil.info("MAIN", "IsTemporaryToken enabled. Fetching STS tokens for " + config.usersCount() + " users...");
+                    LogUtil.info("MAIN", "IsTemporaryToken enabled. " + usersPath + " not found. Fetching STS tokens for " + config.usersCount() + " users...");
 
                     ProcessBuilder pb = new ProcessBuilder("python3", "generate_temp_ak_sk.py", String.valueOf(config.usersCount()));
                     pb.inheritIO();
@@ -137,7 +134,13 @@ public class Bootstrap {
                     }
 
                     if (!tempTokenFile.exists()) {
-                        throw new RuntimeException("FATAL: temptoken.dat not generated.");
+                        // 如果脚本默认生成了 temptoken.dat 而不是 usersPath 指定的文件，尝试查找一下
+                        File defaultTempFile = new File("temptoken.dat");
+                        if (defaultTempFile.exists()) {
+                            tempTokenFile = defaultTempFile;
+                        } else {
+                            throw new RuntimeException("FATAL: No temporary credentials generated.");
+                        }
                     }
                     users = ConfigLoader.loadUsers(tempTokenFile.getAbsolutePath(), config.usersCount());
                 }
