@@ -178,8 +178,8 @@ class JavaBenchmarkTester:
         for name, _, _, is_mock, is_sts, user_file in TASKS:
             print(f"\n--- Testing Scenario: {name} (IsMock={is_mock}, IsSTS={is_sts}, UserFile={user_file}) ---")
             
-            # Use timestamped bucket name for isolation
-            timestamp = int(time.time())
+            # Use timestamped bucket name for isolation (Style: 202604071018)
+            timestamp = time.strftime('%Y%m%d%H%M')
             fixed_bucket = f"bench-smoke-{timestamp}"
             
             # Dynamically modify config for the current scenario
