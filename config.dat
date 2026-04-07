@@ -26,7 +26,7 @@ UsersCount=1
 # Threads opened per user
 ThreadsPerUser=1
 # Benchmark duration (seconds), empty means unlimited
-RunSeconds=60
+RunSeconds=3
 # Max requests per thread
 RequestsPerThread=1
 # TestCase choices: 101=CREATE_BUCKET, 201=PUT, 202=GET, 204=DELETE, 216=MULTIPART, 230=RESUMABLE, 900=MIX
@@ -40,7 +40,7 @@ MixLoopCount=10
 
 # [5. Object & Data Attributes]
 # Fixed Bucket Name (Highest priority, shared by all tenants if configured)
-BucketNameFixed=zengyu-test
+BucketNameFixed=bench-smoke-1775526504
 # Dynamic Bucket Name Prefix (Effective if BucketNameFixed is empty, format: ak.prefix)
 BucketNamePrefix=
 # Bucket Location (Used for TestCase 101, e.g., cn-north-4)
@@ -52,7 +52,7 @@ ObjectNameFixed=
 KeyPrefix=java-bench-test
 # [Upload File Path]
 # Path to local file intended for Multipart (216) or Resumable (230) Test Cases
-UploadFilePath=
+UploadFilePath=/home/zengyu/obs_java_bench/test_data.bin
 # Single object size in Bytes (e.g., 1048576 or 0~4096 for a dynamic range)
 ObjectSize=1048576
 # Part size for multipart uploads in Bytes (e.g., 5242880 for 5MB)
@@ -68,7 +68,7 @@ ObjNamePatternHash=false
 # Whether to enable Zero-GC data validation
 EnableDataValidation=true
 # Whether to enable asynchronous detail logging (detail.csv)
-EnableDetailLog=true
+EnableDetailLog=false
 # Whether to enable resumable checkpoints (Only for TestCase 230)
 EnableCheckpoint=true
 # Whether to enable offline Mock mode (true means no real network requests)
@@ -76,4 +76,4 @@ IsMockMode=false
 # Mock average network latency (milliseconds)
 MockLatencyMs=20
 # Mock error rate (per 10,000, e.g., 50 means 0.5% error rate)
-MockErrorRate=10
+MockErrorRate=0

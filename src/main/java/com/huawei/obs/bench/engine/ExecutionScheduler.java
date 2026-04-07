@@ -91,9 +91,9 @@ public class ExecutionScheduler {
         // Start monitor dashboard thread
         monitor.start();
 
-        // 💥 PULL THE TRIGGER!
+        // PULL THE TRIGGER!
         System.out.println("=========================================================================================");
-        System.out.println(" 🔫 BANG! Benchmark officially started!");
+        System.out.println(" BANG! Benchmark officially started!");
         System.out.println("=========================================================================================");
         startGun.countDown(); 
 

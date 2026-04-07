@@ -134,7 +134,7 @@ public class Bootstrap {
                     }
 
                     if (!tempTokenFile.exists()) {
-                        // 如果脚本默认生成了 temptoken.dat 而不是 usersPath 指定的文件，尝试查找一下
+                        // If the script generated temptoken.dat instead of the specified usersPath, try to find it
                         File defaultTempFile = new File("temptoken.dat");
                         if (defaultTempFile.exists()) {
                             tempTokenFile = defaultTempFile;

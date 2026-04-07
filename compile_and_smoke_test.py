@@ -1,28 +1,30 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import subprocess
 import os
+import sys
 import shutil
 import time
-import sys
+import subprocess
 import re
 
-# ================= 配置区域 =================
-CONFIG_FILE = 'config.dat'
-CONFIG_BAK = 'config.dat.bak'
-USERS_FILE = 'users.dat'
-USERS_BAK = 'users.dat.bak'
-CACHE_DIR = './test_bin_cache'  # 存放编译产物的临时目录
-TEST_DATA_FILE = 'test_data.bin' # 本地测试数据文件
-TEST_DATA_SIZE_MB = 10           # 测试数据大小 (MB)
+# ===========================================
+# Configuration
+# ===========================================
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(PROJECT_ROOT, "config.dat")
+USERS_FILE = os.path.join(PROJECT_ROOT, "users.dat")
+CONFIG_BAK = os.path.join(PROJECT_ROOT, "config.dat.bak")
+USERS_BAK = os.path.join(PROJECT_ROOT, "users.dat.bak")
+TEST_DATA_FILE = os.path.join(PROJECT_ROOT, "test_data.bin")
+TEST_DATA_SIZE_MB = 10 # 10MB test data for smoke test
+CACHE_DIR = os.path.join(PROJECT_ROOT, ".smoke_test_cache")
 
-# 测试用例 ID (基于 README.md 支持列表)
+# Test scenarios (Mock, Standard, etc.)
 TEST_CASES = [101, 201, 202, 204, 216, 230, 900]
-TEST_DURATION = 3 # 冒烟测试运行时间 (秒)
+TEST_DURATION = 3 # Duration per case (seconds)
 
-# 编译与测试任务: (显示名称, 构建命令, 产物路径, 是否 Mock 模式, 是否 STS 模式, 用户文件)
-# Java 只有一个产物，但我们通过配置切换模式路径进行验证
+# Build & Test Tasks: (Name, Command, JAR Path, IsMock, IsSTS, UserFile)
 TASKS = [
     ("Mock",     "mvn clean package -DskipTests", "target/obs_java_bench-1.0.0-SNAPSHOT.jar", True,  False, USERS_FILE),
     ("Standard", "%SAME%",                         "target/obs_java_bench-1.0.0-SNAPSHOT.jar", False, False, USERS_FILE),
@@ -33,38 +35,45 @@ TASKS = [
 class JavaBenchmarkTester:
     def __init__(self):
         self.results = []
-        self.work_dir = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(self.work_dir)
-        self.env = os.environ.copy()
 
-    def run_cmd(self, cmd, capture=True):
-        """执行命令并返回 (returncode, stdout+stderr)"""
+    def run_cmd(self, command):
+        """Execute shell command and return (exit_code, output)"""
         try:
-            if capture:
-                result = subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True, env=self.env
-                )
-                return result.returncode, result.stdout + result.stderr
+            # Handle %SAME% macro
+            if "%SAME%" in command:
+                for i in range(len(TASKS)):
+                    if TASKS[i][1] != "%SAME%":
+                        command = command.replace("%SAME%", TASKS[i][1])
+                        break
+            
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=PROJECT_ROOT
+            )
+            if result.returncode == 0:
+                return 0, result.stdout
             else:
-                result = subprocess.run(cmd, shell=True, env=self.env)
-                return result.returncode, ""
+                return result.returncode, result.stderr
         except Exception as e:
             return -1, str(e)
 
     def prepare_env(self):
         print("[Init] Preparing environment...")
         
-        # 1. 创建缓存目录
+        # 1. Create cache directory
         if os.path.exists(CACHE_DIR):
             shutil.rmtree(CACHE_DIR)
         os.makedirs(CACHE_DIR)
 
-        # 2. 备份 Config 和 Users
+        # 2. Backup Config and Users
         has_config = os.path.exists(CONFIG_FILE)
         if has_config:
             shutil.copy(CONFIG_FILE, CONFIG_BAK)
         
-        # 3. 如果没有配置，创建一个基础模板
+        # 3. Create dummy base if no config found
         if not has_config:
             print("[Init] No config.dat found, creating dummy base.")
             with open(CONFIG_FILE, 'w') as f:
@@ -81,7 +90,7 @@ class JavaBenchmarkTester:
                 f.write("MixLoopCount=10\n")
                 f.write("LogLevel=INFO\n")
 
-        # 4. 强制填充一些冒烟测试必选但用户可能没写的字段 (使用 sed 幂等处理)
+        # 4. Inject mandatory fields to pass ConfigValidator
         mandatory_fields = {
             "UsersCount": "1",
             "ThreadsPerUser": "1",
@@ -93,7 +102,6 @@ class JavaBenchmarkTester:
             "MockErrorRate": "0"
         }
         for key, val in mandatory_fields.items():
-            # 如果不存在该配置项，则追加；如果存在，后续 run_tests 会用 sed 修改
             ret, _ = self.run_cmd(f"grep -q '^{key}=' {CONFIG_FILE}")
             if ret != 0:
                 with open(CONFIG_FILE, 'a') as f:
@@ -102,7 +110,7 @@ class JavaBenchmarkTester:
         if os.path.exists(USERS_FILE):
             shutil.copy(USERS_FILE, USERS_BAK)
         else:
-            # 创建 Dummy Users
+            # Create Dummy Users
             print("[Init] No users.dat found, creating dummy user.")
             with open(USERS_FILE, 'w') as f:
                 f.write("test_user,AK_TEST,SK_TEST\n")
@@ -117,7 +125,7 @@ class JavaBenchmarkTester:
             shutil.rmtree(CACHE_DIR)
 
     def parse_stats(self, output):
-        """解析 Java 工具输出"""
+        """Parse Success/Failed counts from Java tool output"""
         stats = {"success": 0, "failed": 0}
         m_success = re.search(r"Success:\s+(\d+)", output)
         if m_success: stats["success"] = int(m_success.group(1))
@@ -126,7 +134,7 @@ class JavaBenchmarkTester:
         return stats
 
     def compile(self):
-        """编译单一 JAR 产物 (只执行一次即可)"""
+        """Build JAR artifact (Cached after first build)"""
         name, cmd, jar_path, *others = TASKS[0]
         print(f"\n>>> Compiling Build: {name} ...", end='', flush=True)
         start_t = time.time()
@@ -142,12 +150,12 @@ class JavaBenchmarkTester:
             print(f" FAIL! (JAR {jar_path} not found)")
             return False
         
-        # 缓存 JAR
+        # Cache JAR artifact
         dst_jar = os.path.join(CACHE_DIR, "obs_java_bench.jar")
         shutil.copy(jar_path, dst_jar)
         print(f" PASS ({duration:.1f}s) -> JAR Cached")
 
-        # [新增] 运行一次 gen 生成测试数据文件
+        # Generate test data via tool 'gen' command
         print(f"[Init] Generating {TEST_DATA_SIZE_MB}MB test data via tool...")
         ret, _ = self.run_cmd(f"java -jar {dst_jar} gen {TEST_DATA_SIZE_MB}")
         if ret != 0 or not os.path.exists(TEST_DATA_FILE):
@@ -158,22 +166,22 @@ class JavaBenchmarkTester:
 
     def run_tests(self):
         print("\n" + "=" * 60)
-        print(">>> Smoke Testing (Mock vs Standard)")
+        print(">>> Smoke Testing (Mock vs Standard vs STS)")
         print("=" * 60)
         
         jar_path = os.path.join(CACHE_DIR, "obs_java_bench.jar")
         
-        # 101 (Create) -> Others -> 104 (Delete)
+        # 101 (Create) -> Core Ops -> 104 (Delete)
         CORE_TESTS = [201, 202, 204, 216, 230, 900]
         
         for name, _, _, is_mock, is_sts, user_file in TASKS:
             print(f"\n--- Testing Scenario: {name} (IsMock={is_mock}, IsSTS={is_sts}, UserFile={user_file}) ---")
             
-            # 生成带时间戳的固定桶名
+            # Use timestamped bucket name for isolation
             timestamp = int(time.time())
             fixed_bucket = f"bench-smoke-{timestamp}"
             
-            # 动态修改配置文件
+            # Dynamically modify config for the current scenario
             mock_val = "true" if is_mock else "false"
             sts_val = "true" if is_sts else "false"
             sed_cmds = [
@@ -190,14 +198,14 @@ class JavaBenchmarkTester:
             for cmd in sed_cmds:
                 self.run_cmd(cmd)
 
-            # 严格执行逻辑: 101 -> CORE -> 104
+            # Strict order: 101 -> CORE -> 104
             order = [101] + CORE_TESTS + [104]
             
             for case in order:
                 print(f"  Case {case:<3} ... ", end='', flush=True)
                 
                 start_t = time.time()
-                # 命令格式: java -jar app.jar [config] [users] [TestCaseCode]
+                # Execution command: java -jar app.jar [config] [users] [TestCaseCode]
                 ret, output = self.run_cmd(f"java -jar {jar_path} {CONFIG_FILE} {user_file} {case}")
                 duration = time.time() - start_t
                 
