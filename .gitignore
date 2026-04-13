@@ -1,4 +1,9 @@
-target/
+target/generated-sources/
+target/maven-status/
+target/classes/
+target/maven-archiver/
+target/logs/
+target/original-obs_java_bench-1.0.0-SNAPSHOT.jar
 logs/
 users.dat*
 temptoken.dat
