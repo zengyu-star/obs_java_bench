@@ -137,7 +137,7 @@ SCENARIO     | CASE   | STATUS     | DETAIL
 ------------------------------------------------------------
 Mock         | 101    | PASS       | (Succ:1, Fail:0, 0.5s)
 ...
-Standard     | 230    | PASS       | (Succ:5, Fail:0, 1.2s)
+Standard     | 230    | PASS       | (Succ:5, Fail:0, 1.1s)
 ------------------------------------------------------------
 Summary: 21/21 Passed
 ```
